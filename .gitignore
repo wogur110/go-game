@@ -1,0 +1,26 @@
+# KataGo binaries + neural-net weights are downloaded on first run (too big for git)
+/engines/
+/models/
+
+# KataGo runtime logs
+/analysis_logs/
+/gtp_logs/
+
+# Build artifacts
+/dist/
+/build/
+*.spec.bak
+
+# Saved games
+/saves/
+
+# Self-check output
+smoke_error.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/

@@ -1,0 +1,9 @@
+PySide6>=6.6
+sgfmill>=1.1.1
+
+# CUDA 12.x runtime for KataGo's cuda12.8 build (NVIDIA, Linux). These supply
+# libcudnn.so.9 / libcublas.so.12 / libcudart.so.12 so no system CUDA/cuDNN
+# install is needed; app/engine/env.py adds them to LD_LIBRARY_PATH at launch.
+nvidia-cudnn-cu12>=9,<10 ; sys_platform == "linux"
+nvidia-cublas-cu12 ; sys_platform == "linux"
+nvidia-cuda-runtime-cu12 ; sys_platform == "linux"
