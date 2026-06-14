@@ -13,6 +13,7 @@ but the moves are predicted by KataGo rather than a built-in engine.
 - **Engine status:** the sidebar shows model **loading / ready** at startup (colored indicator)
 - **Board aids:** hover **ghost stone** for the next move, hover a candidate to preview its **variation (next 10 moves)**, plus **move-order** and **territory** toggles
 - **Score estimate:** one button runs a deep (high-visit) analysis and shows **each side's territory** on the board plus **who leads by how many points**
+- **Lizzie-style UI:** a bottom **win-rate graph** (Black win rate over the whole game, click to jump) + **heatmap candidate moves** (blue=best→red, win% + visits) + a board-centric layout
 
 **▶ [Download the latest Windows build](https://github.com/wogur110/go-game/releases/latest)** — extract the
 zip and run `BadukStudio.exe`. On first launch the app downloads the KataGo engine (OpenCL by default) and

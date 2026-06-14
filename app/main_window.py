@@ -8,29 +8,36 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtWidgets import QHBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from .board_widget import BoardWidget
 from .game_controller import GameController, PlayerKind
 from .i18n import I18N, t
 from .sidebar import Sidebar
+from .winrate_graph import WinrateGraph
 
 
 class MainWindow(QWidget):
     def __init__(self, engine, size: int = 19, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setWindowTitle(t("app.title"))
-        self.resize(1180, 820)
+        self.resize(1280, 940)
 
         self.engine = engine
         self.controller = GameController(engine, size=size)
         self.board = BoardWidget(size=size)
+        self.graph = WinrateGraph()
         self.sidebar = Sidebar(self.controller, engine)
 
+        # Lizzie-style: board + win-rate graph on the left, controls on the right.
+        left = QVBoxLayout()
+        left.setSpacing(8)
+        left.addWidget(self.board, 1)
+        left.addWidget(self.graph)
         root = QHBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(10)
-        root.addWidget(self.board, 1)
+        root.addLayout(left, 1)
         root.addWidget(self.sidebar)
 
         self.board.moveRequested.connect(self.controller.make_move)
@@ -40,6 +47,7 @@ class MainWindow(QWidget):
         self.sidebar.viewToggled.connect(self._on_view_toggled)
         self.sidebar.pvPreview.connect(self._on_pv_preview)
         self.controller.estimateReady.connect(self._on_estimate)
+        self.graph.moveSelected.connect(self.controller.navigate)
         I18N.languageChanged.connect(self._retranslate)
 
         self._on_position()
@@ -75,6 +83,7 @@ class MainWindow(QWidget):
         self.sidebar.clear_analysis()
         self.sidebar.clear_estimate()
         self.sidebar.refresh_moves()
+        self._refresh_graph()
         human_turn = (self.controller.is_live and not self.controller.game_over
                       and self.controller.player(b.to_move) == PlayerKind.HUMAN)
         self.board.set_movable(human_turn)
@@ -83,3 +92,8 @@ class MainWindow(QWidget):
         to_move = self.controller.view_board().to_move
         self.board.set_analysis(result)
         self.sidebar.set_analysis(result, to_move)
+        self._refresh_graph()
+
+    def _refresh_graph(self) -> None:
+        self.graph.set_data(self.controller.winrate_history(),
+                            self.controller.total_moves, self.controller.view_index)

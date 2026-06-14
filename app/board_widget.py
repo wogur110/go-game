@@ -19,6 +19,15 @@ from .goban import BLACK, EMPTY, WHITE, opponent
 
 Point = Tuple[int, int]
 
+
+def _fmt_visits(v: int) -> str:
+    if v >= 10000:
+        return f"{v / 1000:.0f}k"
+    if v >= 1000:
+        return f"{v / 1000:.1f}k"
+    return str(v)
+
+
 _HOSHI = {
     9: [(2, 2), (6, 2), (4, 4), (2, 6), (6, 6)],
     13: [(3, 3), (9, 3), (6, 6), (3, 9), (9, 9)],
@@ -42,7 +51,7 @@ class BoardWidget(QWidget):
         self._show_ownership = True
         self._show_order = False         # draw move numbers on stones
         self._move_no: Optional[List[int]] = None   # per-point move number (parallel to _board)
-        self._candidate_limit = 6
+        self._candidate_limit = 8
         self._hover_point: Optional[Point] = None    # for the ghost stone
         self._pv_preview: Optional[List[Point]] = None   # candidate variation to show
         self._pv_start_color = BLACK
@@ -248,37 +257,45 @@ class BoardWidget(QWidget):
                     p.drawRect(QRectF(c.x() - dead / 2, c.y() - dead / 2, dead, dead))
 
     def _draw_candidates(self, p: QPainter, r: float, n: int) -> None:
-        moves = self._analysis.moves[:self._candidate_limit]
+        """Lizzie-style: candidates coloured blue (best) → red (worse) by win-rate
+        loss, opacity by visit share, win% big and visits small, best move ringed."""
+        moves = [m for m in self._analysis.moves[:self._candidate_limit] if m.point is not None]
         if not moves:
             return
         black_to_move = self._to_move == BLACK
+
+        def disp_wr(mi):
+            return mi.winrate if black_to_move else 1.0 - mi.winrate
+
+        best_wr = disp_wr(moves[0])
+        max_visits = max((m.visits for m in moves), default=1) or 1
         wr_font = QFont()
-        wr_font.setPixelSize(int(max(8, r * 0.6)))
+        wr_font.setPixelSize(int(max(8, r * 0.66)))
         wr_font.setBold(True)
-        sc_font = QFont()
-        sc_font.setPixelSize(int(max(7, r * 0.44)))
+        v_font = QFont()
+        v_font.setPixelSize(int(max(7, r * 0.42)))
         for rank, mi in enumerate(moves):
-            if mi.point is None:
-                continue
             x, y = mi.point
             if not (0 <= x < n and 0 <= y < n):
                 continue
             c = self._center(x, y)
-            wr = mi.winrate if black_to_move else 1.0 - mi.winrate
-            sc = mi.score_lead if black_to_move else -mi.score_lead
-            base = (QColor(theme.CANDIDATE[rank]) if rank < len(theme.CANDIDATE)
-                    else QColor("#7c8696"))
-            base.setAlpha(235 if rank == 0 else 150)
-            p.setBrush(base)
-            p.setPen(QPen(QColor(theme.BG_MAIN), max(1.0, r * 0.06)))
-            p.drawEllipse(c, r * 0.92, r * 0.92)
+            wr = disp_wr(mi)
+            loss = min(1.0, max(0.0, best_wr - wr) / 0.08)   # 0 = best, 1 = >=8% worse
+            col = QColor.fromHsv(int(210 * (1.0 - loss)), 200, 230)   # 210 blue -> 0 red
+            col.setAlpha(int(110 + 125 * (mi.visits / max_visits) ** 0.5))
+            p.setBrush(col)
+            if rank == 0:
+                p.setPen(QPen(QColor("#f6f8fc"), max(1.4, r * 0.13)))   # highlight the best
+            else:
+                p.setPen(QPen(QColor(theme.BG_MAIN), max(0.8, r * 0.05)))
+            p.drawEllipse(c, r * 0.94, r * 0.94)
             p.setPen(QPen(QColor("#0b0d11")))
             p.setFont(wr_font)
-            p.drawText(QRectF(c.x() - r, c.y() - r * 0.92, 2 * r, r * 1.05),
+            p.drawText(QRectF(c.x() - r, c.y() - r * 0.96, 2 * r, r * 1.05),
                        Qt.AlignCenter, f"{wr * 100:.0f}")
-            p.setFont(sc_font)
-            p.drawText(QRectF(c.x() - r, c.y() + r * 0.05, 2 * r, r * 0.85),
-                       Qt.AlignCenter, f"{sc:+.1f}")
+            p.setFont(v_font)
+            p.drawText(QRectF(c.x() - r, c.y() + r * 0.04, 2 * r, r * 0.9),
+                       Qt.AlignCenter, _fmt_visits(mi.visits))
 
     def _label_color(self, stone_color: int) -> QColor:
         return QColor("#f4f6fa") if stone_color == BLACK else QColor("#15181e")

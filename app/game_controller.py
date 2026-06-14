@@ -58,6 +58,7 @@ class GameController(QObject):
         self._pending_analysis_index = 0   # move-index the in-flight analysis is for
         self._last_analysis_index = -1     # move-index _last_analysis describes
         self._estimate_gen = -1            # generation a score estimate was requested at
+        self._winrate_history: dict = {}   # move index -> Black win rate (for the graph)
 
         engine.moveReady.connect(self._on_engine_move)
         engine.analysisReady.connect(self._on_analysis)
@@ -115,12 +116,14 @@ class GameController(QObject):
         self._winrate = None
         self._last_analysis = None
         self._last_analysis_index = -1
+        self._winrate_history = {}
         self._refresh()
 
     def make_move(self, point: Optional[Point]) -> bool:
         """Apply a HUMAN move (``None`` = pass). Returns False if not allowed."""
         if not self.is_live:
             self._moves = self._moves[:self._view]      # branch from the reviewed position
+            self._prune_winrate_history()
         live = self.live_board()
         if self._resigned is not None or live.is_over:
             return False
@@ -155,6 +158,7 @@ class GameController(QObject):
         if len(humans) == 1 and self._moves and self.live_board().to_move != humans[0]:
             self._moves.pop()
         self._view = len(self._moves)
+        self._prune_winrate_history()
         self._refresh()
 
     def navigate(self, index: int) -> None:
@@ -217,6 +221,7 @@ class GameController(QObject):
         self._winrate = None
         self._last_analysis = None
         self._last_analysis_index = -1
+        self._winrate_history = {}
         self._view = len(self._moves)
         self._refresh()
         return True
@@ -306,8 +311,18 @@ class GameController(QObject):
         self._winrate = result.root_winrate
         self._last_analysis = result
         self._last_analysis_index = self._pending_analysis_index
+        self._winrate_history[self._pending_analysis_index] = result.root_winrate
         self.analysisUpdated.emit(result)
         self._emit_status()
+
+    def winrate_history(self) -> dict:
+        return self._winrate_history
+
+    def _prune_winrate_history(self) -> None:
+        """Drop graph entries for positions past the current move list (after undo/branch)."""
+        n = len(self._moves)
+        for k in [k for k in self._winrate_history if k > n]:
+            del self._winrate_history[k]
 
     # -- status ---------------------------------------------------------------
 
