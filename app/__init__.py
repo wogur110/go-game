@@ -6,4 +6,4 @@ analysis, and KataGo's human-trained network for rank-based, human-like opponent
 """
 
 APP_NAME = "Baduk Studio"
-__version__ = "0.9.0"
+__version__ = "0.9.1"

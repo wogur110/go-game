@@ -60,6 +60,35 @@ def default_backend() -> str:
     satisfied by the nvidia-*-cu12 pip wheels (see requirements.txt)."""
     return "opencl" if os.name == "nt" else "cuda12.8"
 
+
+# Exact asset-name middle tokens for KATAGO_RELEASE, so the binary can be fetched
+# by a DIRECT release URL without the GitHub API (whose unauthenticated 60/hour
+# limit otherwise causes "HTTP Error 403: rate limit exceeded").
+ASSET_STEMS = {
+    "opencl": "opencl",
+    "cuda12.8": "cuda12.8-cudnn9.8.0",
+    "cuda12.5": "cuda12.5-cudnn8.9.7",
+    "cuda12.1": "cuda12.1-cudnn8.9.7",
+    "trt": "trt10.9.0-cuda12.8",
+    "trt10.9": "trt10.9.0-cuda12.8",
+    "trt10.2": "trt10.2.0-cuda12.5",
+    "trt8.6": "trt8.6.1-cuda12.1",
+    "eigen": "eigen",
+    "eigenavx2": "eigenavx2",
+}
+
+
+def direct_asset_name(os_name: str, backend: str, bs50: bool) -> str | None:
+    stem = ASSET_STEMS.get(backend)
+    if not stem:
+        return None
+    os_tok = "windows-x64" if os_name == "windows" else "linux-x64"
+    return f"katago-{KATAGO_RELEASE}-{stem}-{os_tok}{'+bs50' if bs50 else ''}.zip"
+
+
+def release_download_url(name: str) -> str:
+    return f"https://github.com/lightvector/KataGo/releases/download/{KATAGO_RELEASE}/{name}"
+
 # Write next to the executable when frozen (PyInstaller), so a packaged build
 # downloads engines/ and models/ beside the app rather than into a temp dir.
 ROOT = (Path(sys.executable).resolve().parent if getattr(sys, "frozen", False)
@@ -67,7 +96,11 @@ ROOT = (Path(sys.executable).resolve().parent if getattr(sys, "frozen", False)
 
 
 def _ua_request(url: str) -> urllib.request.Request:
-    return urllib.request.Request(url, headers={"User-Agent": "baduk-studio-setup"})
+    headers = {"User-Agent": "baduk-studio-setup"}
+    token = os.environ.get("GITHUB_TOKEN")
+    if token and "api.github.com" in url:        # only the API path is rate-limited
+        headers["Authorization"] = f"token {token}"
+    return urllib.request.Request(url, headers=headers)
 
 
 def download_stream(url: str, dest: Path, on_progress=None) -> None:
@@ -125,22 +158,28 @@ def resolve_asset(assets: list[dict], os_name: str, backend: str, bs50: bool) ->
 
 def download_binary(os_name: str, backend: str, bs50: bool, on_progress=None) -> None:
     print(f"\nKataGo {KATAGO_RELEASE} 바이너리 ({os_name}, {backend})")
-    if on_progress:
-        on_progress(f"KataGo 바이너리 ({backend}) 정보 조회…", -1)
-    assets = fetch_assets()
-    asset = resolve_asset(assets, os_name, backend, bs50)
-    if not asset:
-        print(f"  ✗ 일치하는 에셋 없음. --list 로 확인하세요.")
-        raise RuntimeError(f"'{backend}' 백엔드용 {os_name} 에셋을 찾지 못했습니다")
+    # Prefer a direct release URL (no GitHub API → no rate limit). Fall back to the
+    # API only for an unknown backend not in ASSET_STEMS.
+    name = direct_asset_name(os_name, backend, bs50)
+    url = release_download_url(name) if name else None
+    if not url:
+        if on_progress:
+            on_progress("에셋 정보 조회…", -1)
+        asset = resolve_asset(fetch_assets(), os_name, backend, bs50)
+        if not asset:
+            print("  ✗ 일치하는 에셋 없음. --list 로 확인하세요.")
+            raise RuntimeError(f"'{backend}' 백엔드용 {os_name} 에셋을 찾지 못했습니다")
+        name, url = asset["name"], asset["browser_download_url"]
+
     dest_dir = ROOT / "engines" / os_name
-    archive_path = dest_dir / asset["name"]
-    download_stream(asset["browser_download_url"], archive_path, on_progress)
+    archive_path = dest_dir / name
+    download_stream(url, archive_path, on_progress)
 
     if on_progress:
         on_progress("엔진 압축 해제 중…", -1)
-    print(f"  [unzip] {asset['name']} → engines/{os_name}/")
+    print(f"  [unzip] {name} → engines/{os_name}/")
     payload = archive_path.read_bytes()
-    if asset["name"].endswith(".zip"):
+    if name.endswith(".zip"):
         with zipfile.ZipFile(io.BytesIO(payload)) as z:
             z.extractall(dest_dir)
     else:
