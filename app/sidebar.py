@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout,
 
 from . import theme
 from .engine.coords import from_gtp, to_gtp
+from .engine.discovery import find_model
 from .engine.networks import NETWORKS
 from .game_controller import PlayerKind
 from .goban import BLACK, WHITE
@@ -152,15 +153,18 @@ class Sidebar(QWidget):
             lambda _i: self.controller.set_rank(self.rank_combo.currentData()))
         self.net_combo = QComboBox()
         for key, net in ANALYSIS_NETS:
-            self.net_combo.addItem(key, key)
+            self.net_combo.addItem(t("net." + key), key)
+        self._select_net(self.engine.analysis_network)
         self.net_combo.currentIndexChanged.connect(self._on_network)
         self.net_combo.setEnabled(False)   # gate until engines are loaded
         self.engine.enginesReady.connect(lambda: self.net_combo.setEnabled(True))
         self.rank_label = QLabel(t("ui.rank"))
         self.net_label = QLabel(t("ui.net"))
         sel.addWidget(self.rank_label), sel.addWidget(self.rank_combo, 1)
-        sel.addWidget(self.net_label), sel.addWidget(self.net_combo, 1)
         lay.addLayout(sel)
+        netrow = QHBoxLayout()   # own row — model labels are descriptive (b40/b28/b18)
+        netrow.addWidget(self.net_label), netrow.addWidget(self.net_combo, 1)
+        lay.addLayout(netrow)
 
         # Action buttons.
         self.new_btn = QPushButton(t("btn.new"))
@@ -271,10 +275,29 @@ class Sidebar(QWidget):
         self.engine_status.setText(
             f"<span style='color:{color}'>●</span> {t('engine.' + self._engine_state)}")
 
+    def _select_net(self, key: str) -> None:
+        """Set the network combo to ``key`` without triggering _on_network."""
+        for i in range(self.net_combo.count()):
+            if self.net_combo.itemData(i) == key:
+                self.net_combo.blockSignals(True)
+                self.net_combo.setCurrentIndex(i)
+                self.net_combo.blockSignals(False)
+                return
+
     def _on_network(self, _i: int) -> None:
         key = self.net_combo.currentData()
+        if key == self.engine.analysis_network:
+            return
+        # Download the model first if it isn't present yet (e.g. the big b40 net).
+        if find_model(NETWORKS[key].filename) is None:
+            from .download_dialog import download_network
+            if not download_network(self, key):
+                self._select_net(self.engine.analysis_network)   # cancelled/failed → revert
+                return
         if self.engine.set_analysis_network(key):
             self.controller.refresh_analysis()
+        else:
+            self._select_net(self.engine.analysis_network)
 
     def _on_estimate_click(self) -> None:
         if self.controller.request_estimate():
@@ -365,6 +388,8 @@ class Sidebar(QWidget):
         self.estimate_btn.setText(t("btn.estimate"))
         self.analysis_btn.setText(t("btn.analysis"))
         self.auto_btn.setText(t("btn.auto"))
+        for i in range(self.net_combo.count()):
+            self.net_combo.setItemText(i, t("net." + self.net_combo.itemData(i)))
         self.winbar.update()
 
     def set_status(self, text: str) -> None:

@@ -89,6 +89,11 @@ def direct_asset_name(os_name: str, backend: str, bs50: bool) -> str | None:
 def release_download_url(name: str) -> str:
     return f"https://github.com/lightvector/KataGo/releases/download/{KATAGO_RELEASE}/{name}"
 
+
+class Cancelled(Exception):
+    """Raised inside a download loop when ``should_cancel()`` turns True, so the
+    GUI can stop a long fetch (e.g. the 823MB b40 net) without killing the thread."""
+
 # Write next to the executable when frozen (PyInstaller), so a packaged build
 # downloads engines/ and models/ beside the app rather than into a temp dir.
 ROOT = (Path(sys.executable).resolve().parent if getattr(sys, "frozen", False)
@@ -103,9 +108,11 @@ def _ua_request(url: str) -> urllib.request.Request:
     return urllib.request.Request(url, headers=headers)
 
 
-def download_stream(url: str, dest: Path, on_progress=None) -> None:
+def download_stream(url: str, dest: Path, on_progress=None, should_cancel=None) -> None:
     """Download ``url`` to ``dest``. ``on_progress(message, fraction)`` is called
-    for GUI use (fraction in [0,1], or -1 when unknown)."""
+    for GUI use (fraction in [0,1], or -1 when unknown). ``should_cancel()`` is
+    polled between chunks; when it returns True we drop the partial file and raise
+    :class:`Cancelled` so a GUI thread can stop cleanly."""
     if dest.is_file() and dest.stat().st_size > 0:
         print(f"  [skip] {dest.name} 이미 존재")
         if on_progress:
@@ -115,24 +122,30 @@ def download_stream(url: str, dest: Path, on_progress=None) -> None:
     tmp = dest.parent / (dest.name + ".part")
     print(f"  [get ] {url}")
     last_pct = -1
-    with urllib.request.urlopen(_ua_request(url)) as resp:
-        total = int(resp.headers.get("Content-Length", 0))
-        got = 0
-        with open(tmp, "wb") as fh:
-            while True:
-                chunk = resp.read(1 << 16)
-                if not chunk:
-                    break
-                fh.write(chunk)
-                got += len(chunk)
-                if total:
-                    pct = got * 100 // total
-                    print(f"\r  [....] {pct:3d}%  {got >> 20} / {total >> 20} MB", end="")
-                    if on_progress and pct != last_pct:
-                        last_pct = pct
-                        on_progress(f"{dest.name}  {got >> 20} / {total >> 20} MB", got / total)
-        print()
-    tmp.replace(dest)
+    try:
+        with urllib.request.urlopen(_ua_request(url)) as resp:
+            total = int(resp.headers.get("Content-Length", 0))
+            got = 0
+            with open(tmp, "wb") as fh:
+                while True:
+                    if should_cancel and should_cancel():
+                        raise Cancelled()
+                    chunk = resp.read(1 << 16)
+                    if not chunk:
+                        break
+                    fh.write(chunk)
+                    got += len(chunk)
+                    if total:
+                        pct = got * 100 // total
+                        print(f"\r  [....] {pct:3d}%  {got >> 20} / {total >> 20} MB", end="")
+                        if on_progress and pct != last_pct:
+                            last_pct = pct
+                            on_progress(f"{dest.name}  {got >> 20} / {total >> 20} MB", got / total)
+            print()
+        tmp.replace(dest)
+    except Cancelled:
+        tmp.unlink(missing_ok=True)
+        raise
     print(f"  [ok  ] {dest} ({dest.stat().st_size >> 20} MB)")
     if on_progress:
         on_progress(f"{dest.name} 완료", 1.0)
@@ -156,7 +169,8 @@ def resolve_asset(assets: list[dict], os_name: str, backend: str, bs50: bool) ->
     return cands[0] if cands else None
 
 
-def download_binary(os_name: str, backend: str, bs50: bool, on_progress=None) -> None:
+def download_binary(os_name: str, backend: str, bs50: bool, on_progress=None,
+                    should_cancel=None) -> None:
     print(f"\nKataGo {KATAGO_RELEASE} 바이너리 ({os_name}, {backend})")
     # Prefer a direct release URL (no GitHub API → no rate limit). Fall back to the
     # API only for an unknown backend not in ASSET_STEMS.
@@ -173,7 +187,7 @@ def download_binary(os_name: str, backend: str, bs50: bool, on_progress=None) ->
 
     dest_dir = ROOT / "engines" / os_name
     archive_path = dest_dir / name
-    download_stream(url, archive_path, on_progress)
+    download_stream(url, archive_path, on_progress, should_cancel)
 
     if on_progress:
         on_progress("엔진 압축 해제 중…", -1)
@@ -197,29 +211,33 @@ def download_binary(os_name: str, backend: str, bs50: bool, on_progress=None) ->
     print(f"  [ok  ] {found}")
 
 
-def download_networks(only: str | None = None, on_progress=None) -> None:
+def download_networks(only: str | None = None, on_progress=None, should_cancel=None) -> None:
     print("\nKataGo 네트워크 (가중치)")
     models = ROOT / "models"
     for key, net in NETWORKS.items():
         if only and key != only:
             continue
+        if only is None and not net.default_download:
+            continue   # opt-in network (e.g. b40) — only fetched when explicitly selected
         if on_progress:
             on_progress(f"네트워크 {net.filename}", -1)
-        download_stream(network_url(net), models / net.filename, on_progress)
+        download_stream(network_url(net), models / net.filename, on_progress, should_cancel)
 
 
 def download_all(backend: str | None = None, os_name: str | None = None,
                  bs50: bool = False, on_progress=None,
-                 networks: bool = True, binary: bool = True) -> None:
+                 networks: bool = True, binary: bool = True,
+                 should_cancel=None) -> None:
     """Programmatic entry (used by the in-app download dialog)."""
     if backend is None:
         backend = default_backend()
     if os_name is None:
         os_name = "windows" if os.name == "nt" else "linux"
     if networks:
-        download_networks(None, on_progress=on_progress)
+        download_networks(None, on_progress=on_progress, should_cancel=should_cancel)
     if binary:
-        download_binary(os_name, backend, bs50, on_progress=on_progress)
+        download_binary(os_name, backend, bs50, on_progress=on_progress,
+                        should_cancel=should_cancel)
     if on_progress:
         on_progress("완료", 1.0)
 

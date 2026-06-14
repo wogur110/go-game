@@ -26,6 +26,7 @@ class Network:
     url: str
     role: str   # "analysis" or "human"
     blocks: int
+    default_download: bool = True   # included in the first-run bulk download?
 
 
 DEFAULT_NETWORK = "b28"
@@ -39,6 +40,15 @@ NETWORKS: dict[str, Network] = {
         url=f"{_KATA}/kata1-b28c512nbt-s13255194368-d5935380940.bin.gz",
         role="analysis",
         blocks=28,
+    ),
+    "b40": Network(
+        key="b40",
+        label="KataGo 40블록 (최강 · 느림 · 823MB)",
+        filename="kata1-zhizi-b40c768nbt-s11272M-d5935M.bin.gz",
+        url=f"{_KATA}/kata1-zhizi-b40c768nbt-s11272M-d5935M.bin.gz",
+        role="analysis",
+        blocks=40,
+        default_download=False,     # large; downloaded on demand when selected
     ),
     "b18": Network(
         key="b18",

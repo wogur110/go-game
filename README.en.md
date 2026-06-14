@@ -8,6 +8,7 @@ It aims for UI/features similar to the chess app
 but the moves are predicted by KataGo rather than a built-in engine.
 
 - **Analysis:** KataGo **28-block (b28)** network — win rate, score lead, candidate moves, ownership
+- **Analysis-engine selector:** switch between **40-block (strongest, slow) / 28-block (recommended) / 18-block (fast)** in the sidebar — pick the stronger 40-block (zhizi, ~430 Elo↑) and if it isn't present yet a progress dialog **downloads it on demand** and applies it immediately
 - **Opponent:** KataGo **human-net** (human imitation) — rank-based difficulty from 20k to 9d/pro
 - **Language:** Korean / English — switch from the top of the sidebar (preference is saved)
 - **Engine status:** the sidebar shows model **loading / ready** at startup (colored indicator)
@@ -31,7 +32,7 @@ networks. ([All releases](https://github.com/wogur110/go-game/releases))
 | Item | Choice |
 |---|---|
 | Stack | Python + PySide6 (reuses the chess-game structure) |
-| Default engine | KataGo 28-block `b28` (also: b18 / human-net) |
+| Default engine | KataGo 28-block `b28` (also: b40 strongest / b18 fast / human-net) |
 | GPU backend | NVIDIA CUDA/TensorRT (dev/run on WSL2 Linux) |
 | Difficulty | human-net by rank (b28 stays full-strength for analysis) |
 | v1 scope | Play tab — game + live analysis overlays + SGF; joseki/fuseki study is v2 |
@@ -78,7 +79,7 @@ app/
   sgf_io.py               SGF save/load (sgfmill)
   engine/
     coords.py             internal (x,y) ↔ GTP coords (A19, Q16 …)
-    networks.py           selectable network registry (b28 default)
+    networks.py           selectable network registry (b28 default · b40 strongest · b18 fast, default_download flag)
     discovery.py          find katago / networks / configs (PyInstaller + PATH aware)
     analysis_client.py    `katago analysis` JSON client (analysis role)
     gtp_client.py         `katago gtp` human-net client (play role)
@@ -101,7 +102,7 @@ Follows the chess app's **two-engine (play/analysis)** split:
 - **M0 — engine spike ✅**: downloader, analysis/human-net clients, headless check
 - **M1 — rules + board + play ✅**: rules engine, board widget (render + click-to-place), `GameController`,
   Qt `EngineManager`, real human↔human-net games
-- **M2 — analysis UI ✅**: win/score bar, candidate overlay, ownership heatmap, net selector (b28/b18), sidebar
+- **M2 — analysis UI ✅**: win/score bar, candidate overlay, ownership heatmap, net selector (b40/b28/b18, on-demand download), sidebar
 - **M3 — endgame ✅**: two-pass KataGo `scoreLead` scoring (dead stones reflected in ownership), SGF
 - **M4 — packaging ✅**: PyInstaller `baduk_studio.spec` (engine excluded, downloaded on first run),
   `build_linux.sh`/`build_windows.bat`, GitHub Actions (Ubuntu test + build-smoke → Windows build/release)

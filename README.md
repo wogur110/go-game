@@ -7,6 +7,7 @@ KataGo 신경망을 **실제 GPU**로 구동하는 바둑 데스크톱 프로그
 비슷한 UI/기능을 목표로 하되, 다음 수는 내장 알고리즘이 아니라 KataGo가 예측합니다.
 
 - **분석:** KataGo **28블록(b28)** 네트워크 — 승률·집수·후보수·영역(ownership)
+- **분석 엔진 선택:** 사이드바에서 **40블록(최강·느림) / 28블록(권장) / 18블록(빠름)** 전환 — 더 강한 40블록(zhizi, ~430 Elo↑)을 고르면 미보유 시 진행률 다이얼로그로 **자동 다운로드** 후 즉시 적용
 - **대국 상대:** KataGo **휴먼넷**(사람 모방) — 20급~9단/프로 급수별 난이도
 - **언어:** 한국어 / English — 사이드바 상단에서 전환(설정 저장)
 - **엔진 상태 표시:** 시작 시 모델 **로딩 중 / 준비 완료**를 사이드바에 색상 점으로 표시
@@ -29,7 +30,7 @@ KataGo 신경망을 **실제 GPU**로 구동하는 바둑 데스크톱 프로그
 | 항목 | 선택 |
 |---|---|
 | 기술 스택 | Python + PySide6 (chess-game 구조 재사용) |
-| 기본 엔진 | KataGo 28블록 `b28` (선택: b18 / 휴먼넷) |
+| 기본 엔진 | KataGo 28블록 `b28` (선택: b40 최강 / b18 빠름 / 휴먼넷) |
 | GPU 백엔드 | NVIDIA CUDA/TensorRT (개발/실행은 WSL2 Linux) |
 | 난이도 | 휴먼넷 급수별 (b28은 분석 전용 최강) |
 | v1 범위 | Play 탭 — 대국 + 실시간 분석 오버레이 + SGF, 조이/포석 study는 v2 |
@@ -74,7 +75,7 @@ app/
   engine/
     coords.py             내부 (x,y) ↔ GTP 좌표(A19, Q16 …) 변환
     types.py              MoveInfo / AnalysisResult 데이터 (흑 기준 승률·집수)
-    networks.py           선택 가능한 네트워크 레지스트리 (b28 기본)
+    networks.py           선택 가능한 네트워크 레지스트리 (b28 기본 · b40 최강 · b18 빠름, default_download 플래그)
     discovery.py          katago/네트워크/설정 파일 탐색 (PyInstaller·PATH 대응)
     analysis_client.py    `katago analysis` JSON 클라이언트 (분석 역할)
     gtp_client.py         `katago gtp` 휴먼넷 클라이언트 (대국 역할)
@@ -97,7 +98,7 @@ app/
 - **M0 — 엔진 스파이크 ✅** : 다운로더, 분석/휴먼넷 클라이언트, 헤드리스 점검
 - **M1 — 규칙 + 보드 + 대국 ✅** : 규칙 엔진(따냄/패/자살수/패스/집계산), 보드 위젯(렌더·클릭 착수),
   `GameController`(세대 카운터·Human/AI·undo·리뷰), Qt `EngineManager`, 사람↔휴먼넷 실제 대국
-- **M2 — 분석 UI ✅** : 승률·집수 바, 후보수 오버레이, ownership 히트맵, 분석망 선택(b28/b18), 사이드바(후보 패널·수순표)
+- **M2 — 분석 UI ✅** : 승률·집수 바, 후보수 오버레이, ownership 히트맵, 분석망 선택(b40/b28/b18 · 미보유 시 자동 다운로드), 사이드바(후보 패널·수순표)
 - **M3 — 종국 처리 ✅** : 두 번 패스 후 KataGo `scoreLead` 집계산(사석은 ownership에 반영), SGF 저장/로드/리뷰
 - **M4 — 패키징 ✅** : PyInstaller `baduk_studio.spec`(엔진 제외, 첫 실행 시 다운로드), `build_linux.sh`/`build_windows.bat`, GitHub Actions(우분투 테스트+빌드스모크 → 윈도우 빌드/릴리스)
 - **인앱 엔진 다운로드 ✅** : 첫 실행 시 엔진이 없으면 백엔드 선택 + 진행률 다이얼로그로 다운로드
