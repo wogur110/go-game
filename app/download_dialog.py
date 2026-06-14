@@ -16,13 +16,23 @@ from PySide6.QtWidgets import (QComboBox, QDialog, QHBoxLayout, QLabel,
 import download_katago
 from . import theme
 
-# Friendly backend choices for the picker (value = download_katago backend key).
-_BACKENDS = [
-    ("NVIDIA GPU · CUDA 12.8 (권장)", "cuda12.8"),
-    ("NVIDIA GPU · TensorRT", "trt"),
-    ("기타 GPU · OpenCL", "opencl"),
-    ("CPU만 · Eigen (느림)", "eigen"),
-]
+
+def _backend_choices():
+    """OS-aware picker (first = recommended/default). On Windows the CUDA build
+    needs ~1.3GB of CUDA/cuDNN DLLs the user lacks, so OpenCL (driver-provided)
+    is the safe default; on Linux CUDA works via the bundled pip wheels."""
+    if os.name == "nt":
+        return [
+            ("GPU · OpenCL (권장, 드라이버만 필요)", "opencl"),
+            ("NVIDIA · CUDA 12.8 (CUDA+cuDNN 런타임 별도 설치 필요)", "cuda12.8"),
+            ("CPU만 · Eigen (느림)", "eigen"),
+        ]
+    return [
+        ("NVIDIA GPU · CUDA 12.8 (권장)", "cuda12.8"),
+        ("NVIDIA GPU · TensorRT", "trt"),
+        ("기타 GPU · OpenCL", "opencl"),
+        ("CPU만 · Eigen (느림)", "eigen"),
+    ]
 
 
 class _Worker(QObject):
@@ -63,7 +73,7 @@ class DownloadDialog(QDialog):
         row = QHBoxLayout()
         row.addWidget(QLabel("백엔드"))
         self.combo = QComboBox()
-        for label, key in _BACKENDS:
+        for label, key in _backend_choices():
             self.combo.addItem(label, key)
         row.addWidget(self.combo, 1)
         lay.addLayout(row)

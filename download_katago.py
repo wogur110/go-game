@@ -10,11 +10,14 @@ Examples:
     python download_katago.py --networks-only     # just the .bin.gz weights
     python download_katago.py --list              # list downloadable engine assets
 
-Backend notes (NVIDIA): the default is **cuda12.8** — verified on an RTX 50-series
-(Blackwell) GPU in WSL2. Its CUDA/cuDNN runtime is supplied by the ``nvidia-*-cu12``
-pip wheels in requirements.txt, so ``pip install -r requirements.txt`` is all you
-need (no system CUDA/cuDNN install, no manual LD_LIBRARY_PATH). ``opencl`` needs an
-OpenCL ICD (absent from the default NVIDIA WSL driver); ``trt`` needs TensorRT.
+Backend notes — the default is OS-aware:
+- **Windows → opencl**: the KataGo Windows CUDA build needs ~1.3GB of CUDA/cuDNN
+  DLLs (cudart/cublas/cublasLt/cudnn) that aren't bundled, whereas the OpenCL
+  build runs on just the GPU driver's OpenCL.dll. So OpenCL is the safe default.
+  (Use ``--backend cuda12.8`` only if you've installed the CUDA 12 + cuDNN 9 runtime.)
+- **Linux → cuda12.8**: satisfied by the ``nvidia-*-cu12`` pip wheels in
+  requirements.txt (no system CUDA/cuDNN install, no manual LD_LIBRARY_PATH).
+  Verified on an RTX 50-series (Blackwell) GPU in WSL2.
 """
 
 from __future__ import annotations
@@ -48,6 +51,14 @@ BACKENDS = {
     "eigenavx2": "eigenavx2",  # faster CPU build
 }
 DEFAULT_BACKEND = "cuda12.8"
+
+
+def default_backend() -> str:
+    """OS-aware default. On Windows the CUDA build needs ~1.3GB of CUDA/cuDNN
+    DLLs the user doesn't have, while the OpenCL build runs on just the GPU
+    driver's OpenCL.dll — so default to OpenCL there. On Linux the CUDA build is
+    satisfied by the nvidia-*-cu12 pip wheels (see requirements.txt)."""
+    return "opencl" if os.name == "nt" else "cuda12.8"
 
 # Write next to the executable when frozen (PyInstaller), so a packaged build
 # downloads engines/ and models/ beside the app rather than into a temp dir.
@@ -158,10 +169,12 @@ def download_networks(only: str | None = None, on_progress=None) -> None:
         download_stream(network_url(net), models / net.filename, on_progress)
 
 
-def download_all(backend: str = DEFAULT_BACKEND, os_name: str | None = None,
+def download_all(backend: str | None = None, os_name: str | None = None,
                  bs50: bool = False, on_progress=None,
                  networks: bool = True, binary: bool = True) -> None:
     """Programmatic entry (used by the in-app download dialog)."""
+    if backend is None:
+        backend = default_backend()
     if os_name is None:
         os_name = "windows" if os.name == "nt" else "linux"
     if networks:
@@ -175,7 +188,7 @@ def download_all(backend: str = DEFAULT_BACKEND, os_name: str | None = None,
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--backend", choices=sorted(BACKENDS), default=DEFAULT_BACKEND)
+    parser.add_argument("--backend", choices=sorted(BACKENDS), default=default_backend())
     parser.add_argument("--os", dest="os_name", choices=["linux", "windows"],
                         default=("windows" if os.name == "nt" else "linux"))
     parser.add_argument("--bs50", action="store_true",

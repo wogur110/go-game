@@ -100,8 +100,13 @@ app/
 엔진(KataGo 바이너리 + 네트워크)은 용량/GPU 의존성 때문에 번들에 넣지 않고 **앱에서 받습니다**:
 
 ```bash
-BadukStudio --download                 # 기본 NVIDIA CUDA 12.8 (또는 --backend opencl|eigen)
+BadukStudio --download                 # 기본 백엔드: Windows=OpenCL, Linux=CUDA 12.8 (--backend 로 변경)
 ```
+
+> **Windows 백엔드:** KataGo CUDA 빌드는 cudart/cublas/cudnn 등 ~1.3GB의 CUDA·cuDNN DLL을
+> 따로 설치해야 동작합니다(미설치 시 `cublas64_12.dll 없음` 에러). 그래서 Windows 기본값은
+> **OpenCL**(GPU 드라이버의 `OpenCL.dll`만 있으면 됨)입니다. CUDA를 쓰려면 CUDA 12 + cuDNN 9
+> 런타임을 설치 후 `--backend cuda12.8`.
 
 [.github/workflows/build.yml](.github/workflows/build.yml): main/PR/태그 push 시 우분투에서 규칙·SGF
 테스트 + 엔진 없는 `--build-smoke`를 돌리고, windows-latest에서 exe를 빌드·스모크·zip 패키징하며,
