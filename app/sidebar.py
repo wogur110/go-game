@@ -134,7 +134,7 @@ class Sidebar(QWidget):
 
         # Player modes.
         self.black_combo = self._player_combo(BLACK, PlayerKind.HUMAN)
-        self.white_combo = self._player_combo(WHITE, PlayerKind.AI)
+        self.white_combo = self._player_combo(WHITE, PlayerKind.HUMAN)
         self.black_label = QLabel(t("ui.black_player"))
         self.white_label = QLabel(t("ui.white_player"))
         row = QHBoxLayout()
@@ -147,7 +147,7 @@ class Sidebar(QWidget):
         self.rank_combo = QComboBox()
         for r in RANKS:
             self.rank_combo.addItem(r.removeprefix("rank_"), r)
-        self.rank_combo.setCurrentIndex(RANKS.index("rank_5k"))
+        self.rank_combo.setCurrentIndex(RANKS.index("rank_9d"))
         self.rank_combo.currentIndexChanged.connect(
             lambda _i: self.controller.set_rank(self.rank_combo.currentData()))
         self.net_combo = QComboBox()
@@ -207,6 +207,22 @@ class Sidebar(QWidget):
         self.estimate_label.setWordWrap(True)
         lay.addWidget(self.estimate_label)
 
+        # Analysis on/off (space) + auto-analyze ('a').
+        self.analysis_btn = QPushButton(t("btn.analysis"))
+        self.analysis_btn.setCheckable(True)
+        self.analysis_btn.setChecked(True)
+        self.analysis_btn.setToolTip("Space")
+        self.auto_btn = QPushButton(t("btn.auto"))
+        self.auto_btn.setCheckable(True)
+        self.auto_btn.setToolTip("A")
+        self.analysis_btn.toggled.connect(self.controller.set_analysis_enabled)
+        self.auto_btn.toggled.connect(self.controller.set_auto_analyze)
+        self.controller.analysisEnabledChanged.connect(self._sync_analysis_btn)
+        self.controller.autoAnalyzeChanged.connect(self._sync_auto_btn)
+        ctl = QHBoxLayout()
+        ctl.addWidget(self.analysis_btn), ctl.addWidget(self.auto_btn)
+        lay.addLayout(ctl)
+
         # Candidate moves (hover a row to preview its variation on the board).
         self.cand_label = QLabel(t("ui.candidates"))
         lay.addWidget(self.cand_label)
@@ -214,6 +230,7 @@ class Sidebar(QWidget):
         self.candidates.setFont(_MONO)
         self.candidates.setFixedHeight(132)
         self.candidates.setMouseTracking(True)
+        self.candidates.viewport().setMouseTracking(True)   # required for itemEntered on hover
         self.candidates.itemClicked.connect(self._on_candidate)
         self.candidates.itemEntered.connect(self._on_candidate_hover)
         self.candidates.viewport().installEventFilter(self)
@@ -268,6 +285,16 @@ class Sidebar(QWidget):
     def _on_engine_error(self, _msg: str) -> None:
         if self.estimate_label.text() == t("estimate.computing"):
             self.estimate_label.setText("")   # don't leave the estimate hanging on an error
+
+    def _sync_analysis_btn(self, on: bool) -> None:
+        self.analysis_btn.blockSignals(True)
+        self.analysis_btn.setChecked(on)
+        self.analysis_btn.blockSignals(False)
+
+    def _sync_auto_btn(self, on: bool) -> None:
+        self.auto_btn.blockSignals(True)
+        self.auto_btn.setChecked(on)
+        self.auto_btn.blockSignals(False)
 
     def show_estimate(self, result, to_move: int) -> None:
         own = result.ownership or []
@@ -336,6 +363,8 @@ class Sidebar(QWidget):
         self.terr_check.setText(t("ui.show_territory"))
         self.order_check.setText(t("ui.show_order"))
         self.estimate_btn.setText(t("btn.estimate"))
+        self.analysis_btn.setText(t("btn.analysis"))
+        self.auto_btn.setText(t("btn.auto"))
         self.winbar.update()
 
     def set_status(self, text: str) -> None:

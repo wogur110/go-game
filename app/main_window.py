@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from .board_widget import BoardWidget
@@ -48,10 +50,28 @@ class MainWindow(QWidget):
         self.sidebar.pvPreview.connect(self._on_pv_preview)
         self.controller.estimateReady.connect(self._on_estimate)
         self.graph.moveSelected.connect(self.controller.navigate)
+        self.controller.analysisEnabledChanged.connect(self._on_analysis_enabled)
         I18N.languageChanged.connect(self._retranslate)
 
+        self._add_shortcuts()
         self._on_position()
         self.controller._emit_status()
+
+    def _add_shortcuts(self) -> None:
+        c = self.controller
+
+        def sc(seq, fn):
+            s = QShortcut(QKeySequence(seq), self, activated=fn)
+            s.setContext(Qt.ApplicationShortcut)   # work regardless of which widget has focus
+
+        sc(Qt.Key_Space, c.toggle_analysis)              # space: analysis on/off
+        sc(Qt.Key_Left, lambda: c.step(-1))              # ← / → : navigate
+        sc(Qt.Key_Right, lambda: c.step(1))
+        sc(Qt.Key_Home, lambda: c.navigate(0))           # start / end
+        sc(Qt.Key_End, lambda: c.navigate(c.total_moves))
+        sc(Qt.Key_A, c.toggle_auto_analyze)              # a: auto-analyze
+        sc(Qt.Key_P, c.pass_move)                        # p: pass
+        sc(QKeySequence.Undo, c.undo)                    # Ctrl+Z: undo
 
     def _retranslate(self) -> None:
         self.setWindowTitle(t("app.title"))
@@ -76,6 +96,11 @@ class MainWindow(QWidget):
     def _on_estimate(self, result) -> None:
         self.board.set_territory(result.ownership)
         self.sidebar.show_estimate(result, self.controller.view_board().to_move)
+
+    def _on_analysis_enabled(self, enabled: bool) -> None:
+        if not enabled:                       # paused: clear the live overlays
+            self.board.set_analysis(None)
+            self.sidebar.clear_analysis()
 
     def _on_position(self) -> None:
         b = self.controller.view_board()

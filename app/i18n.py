@@ -41,6 +41,8 @@ STRINGS: dict[str, dict[str, str]] = {
     "ui.show_territory": {"ko": "형세 판단", "en": "Territory"},
     "ui.show_order": {"ko": "착점 순서", "en": "Move order"},
     "btn.estimate": {"ko": "정밀 형세 판단", "en": "Score estimate"},
+    "btn.analysis": {"ko": "분석 ▶", "en": "Analysis ▶"},
+    "btn.auto": {"ko": "자동 진행", "en": "Auto"},
     "estimate.computing": {"ko": "형세 판단 중… (정밀 분석)", "en": "Estimating… (deep analysis)"},
     "estimate.summary": {"ko": "흑 {ba}집 · 백 {wa}집 — {leader} {margin:.1f}집 우세",
                          "en": "Black {ba} · White {wa} — {leader} leads by {margin:.1f}"},

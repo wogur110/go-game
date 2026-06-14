@@ -24,6 +24,7 @@ Move = Tuple[int, Optional[Point]]   # (color, point|None-for-pass)
 
 AI_DELAY_MS = 200
 AI_VS_AI_DELAY_MS = 500
+AUTO_ANALYZE_DELAY_MS = 550            # pause on each position while auto-analyzing
 
 
 class PlayerKind(Enum):
@@ -36,6 +37,8 @@ class GameController(QObject):
     statusChanged = Signal(str)
     analysisUpdated = Signal(object)   # AnalysisResult for the current view
     estimateReady = Signal(object)     # high-visit AnalysisResult for a score estimate
+    analysisEnabledChanged = Signal(bool)
+    autoAnalyzeChanged = Signal(bool)
 
     def __init__(self, engine, size: int = 19, komi: float = 7.5,
                  rules: str = "chinese", parent: Optional[QObject] = None):
@@ -47,8 +50,8 @@ class GameController(QObject):
         self._moves: List[Move] = []
         self._setup_black: List[Point] = []
         self._setup_white: List[Point] = []
-        self._players = {BLACK: PlayerKind.HUMAN, WHITE: PlayerKind.AI}
-        self._rank = "rank_5k"
+        self._players = {BLACK: PlayerKind.HUMAN, WHITE: PlayerKind.HUMAN}
+        self._rank = "rank_9d"
         self._generation = 0
         self._view = 0
         self._thinking = False
@@ -59,6 +62,8 @@ class GameController(QObject):
         self._last_analysis_index = -1     # move-index _last_analysis describes
         self._estimate_gen = -1            # generation a score estimate was requested at
         self._winrate_history: dict = {}   # move index -> Black win rate (for the graph)
+        self._analysis_enabled = True      # space toggles continuous analysis on/off
+        self._auto_analyze = False         # auto-step through the game analysing each move
 
         engine.moveReady.connect(self._on_engine_move)
         engine.analysisReady.connect(self._on_analysis)
@@ -259,7 +264,7 @@ class GameController(QObject):
         # Analyse every position — including a two-pass terminal one, whose
         # rootInfo.scoreLead is KataGo's final score. (Resigned games have no
         # position worth scoring.)
-        if self._resigned is not None:
+        if self._resigned is not None or not self._analysis_enabled:
             return
         self._pending_analysis_index = self._view
         self.engine.request_analysis(self._gtp_moves(self._view), self._generation)
@@ -314,6 +319,12 @@ class GameController(QObject):
         self._winrate_history[self._pending_analysis_index] = result.root_winrate
         self.analysisUpdated.emit(result)
         self._emit_status()
+        if self._auto_analyze:
+            if self._view < len(self._moves):
+                gen = self._generation
+                QTimer.singleShot(AUTO_ANALYZE_DELAY_MS, lambda: self._auto_advance(gen))
+            else:
+                self.set_auto_analyze(False)   # reached the end of the game
 
     def winrate_history(self) -> dict:
         return self._winrate_history
@@ -323,6 +334,51 @@ class GameController(QObject):
         n = len(self._moves)
         for k in [k for k in self._winrate_history if k > n]:
             del self._winrate_history[k]
+
+    # -- analysis on/off + auto-analyze (keyboard: space / 'a') ----------------
+
+    @property
+    def analysis_enabled(self) -> bool:
+        return self._analysis_enabled
+
+    @property
+    def auto_analyzing(self) -> bool:
+        return self._auto_analyze
+
+    def set_analysis_enabled(self, enabled: bool) -> None:
+        if enabled == self._analysis_enabled:
+            return
+        self._analysis_enabled = enabled
+        self.analysisEnabledChanged.emit(enabled)
+        if enabled:
+            self._request_analysis()
+        elif self._auto_analyze:
+            self.set_auto_analyze(False)
+
+    def toggle_analysis(self) -> None:
+        self.set_analysis_enabled(not self._analysis_enabled)
+
+    def set_auto_analyze(self, on: bool) -> None:
+        if on == self._auto_analyze:
+            return
+        self._auto_analyze = on
+        self.autoAnalyzeChanged.emit(on)
+        if on:
+            if not self._analysis_enabled:
+                self.set_analysis_enabled(True)
+            if self._view >= len(self._moves):
+                self.navigate(0)          # review the whole game from the start
+            else:
+                self._request_analysis()  # kick the chain at the current position
+
+    def toggle_auto_analyze(self) -> None:
+        self.set_auto_analyze(not self._auto_analyze)
+
+    def _auto_advance(self, gen: int) -> None:
+        if gen != self._generation:
+            return   # the user navigated since this advance was scheduled — drop it
+        if self._auto_analyze and self._view < len(self._moves):
+            self.navigate(self._view + 1)
 
     # -- status ---------------------------------------------------------------
 
