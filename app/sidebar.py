@@ -7,16 +7,18 @@ All visible text comes from i18n and is re-applied live by retranslate().
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
-from PySide6.QtCore import QRectF, Qt
+Point = Tuple[int, int]
+
+from PySide6.QtCore import QEvent, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter
-from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel,
-                               QListWidget, QListWidgetItem, QPushButton,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout,
+                               QLabel, QListWidget, QListWidgetItem, QPushButton,
                                QVBoxLayout, QWidget)
 
 from . import theme
-from .engine.coords import to_gtp
+from .engine.coords import from_gtp, to_gtp
 from .engine.networks import NETWORKS
 from .game_controller import PlayerKind
 from .goban import BLACK, WHITE
@@ -85,10 +87,14 @@ class WinBar(QWidget):
 
 
 class Sidebar(QWidget):
+    viewToggled = Signal(str, bool)   # ("candidates"|"territory"|"order", checked)
+    pvPreview = Signal(object)        # (points, start_color) or None
+
     def __init__(self, controller, engine, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.controller = controller
         self.engine = engine
+        self._pv_start_color = BLACK
         self.setFixedWidth(300)
 
         lay = QVBoxLayout(self)
@@ -177,13 +183,30 @@ class Sidebar(QWidget):
         files.addWidget(self.save_btn), files.addWidget(self.load_btn)
         lay.addLayout(files)
 
-        # Candidate moves.
+        # View toggles: candidate overlay, territory (형세 판단), move order.
+        self.cand_check = QCheckBox(t("ui.show_candidates"))
+        self.terr_check = QCheckBox(t("ui.show_territory"))
+        self.order_check = QCheckBox(t("ui.show_order"))
+        self.cand_check.setChecked(True)
+        self.terr_check.setChecked(True)
+        self.cand_check.toggled.connect(lambda c: self.viewToggled.emit("candidates", c))
+        self.terr_check.toggled.connect(lambda c: self.viewToggled.emit("territory", c))
+        self.order_check.toggled.connect(lambda c: self.viewToggled.emit("order", c))
+        opts = QHBoxLayout()
+        for cb in (self.cand_check, self.terr_check, self.order_check):
+            opts.addWidget(cb)
+        lay.addLayout(opts)
+
+        # Candidate moves (hover a row to preview its variation on the board).
         self.cand_label = QLabel(t("ui.candidates"))
         lay.addWidget(self.cand_label)
         self.candidates = QListWidget()
         self.candidates.setFont(_MONO)
         self.candidates.setFixedHeight(132)
+        self.candidates.setMouseTracking(True)
         self.candidates.itemClicked.connect(self._on_candidate)
+        self.candidates.itemEntered.connect(self._on_candidate_hover)
+        self.candidates.viewport().installEventFilter(self)
         lay.addWidget(self.candidates)
 
         # Move list + navigation.
@@ -244,6 +267,15 @@ class Sidebar(QWidget):
         if point is not None:
             self.controller.make_move(tuple(point))
 
+    def _on_candidate_hover(self, item: QListWidgetItem) -> None:
+        pv = item.data(Qt.UserRole + 1)
+        self.pvPreview.emit((pv, self._pv_start_color) if pv else None)
+
+    def eventFilter(self, obj, event) -> bool:
+        if obj is self.candidates.viewport() and event.type() == QEvent.Leave:
+            self.pvPreview.emit(None)
+        return super().eventFilter(obj, event)
+
     def _on_move_clicked(self, item: QListWidgetItem) -> None:
         idx = item.data(Qt.UserRole)
         if idx is not None:
@@ -268,6 +300,9 @@ class Sidebar(QWidget):
         self.save_btn.setText(t("btn.sgf_save"))
         self.load_btn.setText(t("btn.sgf_load"))
         self.cand_label.setText(t("ui.candidates"))
+        self.cand_check.setText(t("ui.show_candidates"))
+        self.terr_check.setText(t("ui.show_territory"))
+        self.order_check.setText(t("ui.show_order"))
         self.winbar.update()
 
     def set_status(self, text: str) -> None:
@@ -279,6 +314,8 @@ class Sidebar(QWidget):
 
     def set_analysis(self, result, to_move: int) -> None:
         black = to_move == BLACK
+        self._pv_start_color = to_move
+        size = self.controller.size
         self.winbar.set_value(result.root_winrate, result.root_score_lead)
         self.candidates.clear()
         for mi in result.moves[:8]:
@@ -287,6 +324,16 @@ class Sidebar(QWidget):
             text = f"{mi.vertex:>4}  {wr * 100:5.1f}%  {sc:+5.1f}  {_fmt_visits(mi.visits):>5}"
             item = QListWidgetItem(text)
             item.setData(Qt.UserRole, mi.point)
+            pv_pts: List[Point] = []
+            for v in mi.pv[:10]:
+                try:
+                    pt = from_gtp(v, size)
+                except ValueError:
+                    pt = None
+                if pt is None:
+                    break   # stop at first pass/resign so color parity + numbering stay aligned
+                pv_pts.append(pt)
+            item.setData(Qt.UserRole + 1, pv_pts)
             self.candidates.addItem(item)
 
     def refresh_moves(self) -> None:

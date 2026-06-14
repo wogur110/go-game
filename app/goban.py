@@ -82,6 +82,7 @@ class Goban:
         self.last_move: Optional[Point] = None
         self.last_was_pass = False
         self.moves: List[Tuple[int, Optional[Point]]] = []
+        self.move_no: List[int] = [0] * (size * size)   # 1-based move number per point (0 = none)
         self._ztab = _zobrist_table(size)
         self._history: Set[int] = {self._board_hash(self.board)}
 
@@ -168,6 +169,9 @@ class Goban:
         stones, libs = _group_on(self.board, self.size, move)
         self.ko = captured[0] if (len(captured) == 1 and len(stones) == 1 and len(libs) == 1) else None
         self._commit(color, move, captured)
+        for q in captured:
+            self.move_no[self._idx(q)] = 0
+        self.move_no[self._idx(move)] = self.move_number
         return captured
 
     def _commit(self, color: int, move: Optional[Point], captured: List[Point]) -> None:
@@ -224,6 +228,7 @@ class Goban:
         g.last_move = self.last_move
         g.last_was_pass = self.last_was_pass
         g.moves = list(self.moves)
+        g.move_no = list(self.move_no)
         g._ztab = self._ztab
         g._history = set(self._history)
         return g

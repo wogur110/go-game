@@ -15,7 +15,7 @@ from PySide6.QtWidgets import QWidget
 
 from . import theme
 from .engine.coords import GTP_COLUMNS
-from .goban import BLACK, EMPTY, WHITE
+from .goban import BLACK, EMPTY, WHITE, opponent
 
 Point = Tuple[int, int]
 
@@ -40,24 +40,41 @@ class BoardWidget(QWidget):
         self._analysis = None            # AnalysisResult for the shown position, or None
         self._show_analysis = True
         self._show_ownership = True
+        self._show_order = False         # draw move numbers on stones
+        self._move_no: Optional[List[int]] = None   # per-point move number (parallel to _board)
         self._candidate_limit = 6
+        self._hover_point: Optional[Point] = None    # for the ghost stone
+        self._pv_preview: Optional[List[Point]] = None   # candidate variation to show
+        self._pv_start_color = BLACK
         self.setMinimumSize(360, 360)
         self.setMouseTracking(True)
 
     # -- state ----------------------------------------------------------------
 
-    def set_position(self, board: List[int], size: int,
-                     last_move: Optional[Point], to_move: int = BLACK) -> None:
+    def set_position(self, board: List[int], size: int, last_move: Optional[Point],
+                     to_move: int = BLACK, move_no: Optional[List[int]] = None) -> None:
         self._board = board
         self._size = size
         self._last_move = last_move
         self._to_move = to_move
+        self._move_no = move_no
         self._analysis = None            # overlays are stale until new analysis arrives
+        self._pv_preview = None
         self.update()
 
     def set_analysis(self, result) -> None:
         """Attach an AnalysisResult (candidate moves + ownership) for the shown position."""
         self._analysis = result
+        self.update()
+
+    def set_show_order(self, show: bool) -> None:
+        self._show_order = show
+        self.update()
+
+    def set_pv_preview(self, points: Optional[List[Point]], start_color: int = BLACK) -> None:
+        """Show a candidate's principal variation as numbered ghost stones (or clear)."""
+        self._pv_preview = points or None
+        self._pv_start_color = start_color
         self.update()
 
     def set_movable(self, movable: bool) -> None:
@@ -150,8 +167,10 @@ class BoardWidget(QWidget):
                 if v != EMPTY:
                     self._draw_stone(p, self._center(x, y), r, v)
 
-        # Last-move marker.
-        if self._last_move is not None:
+        # Move-order numbers (option) replace the last-move dot with full numbering.
+        if self._show_order and self._move_no is not None:
+            self._draw_move_numbers(p, r, n)
+        elif self._last_move is not None:
             lx, ly = self._last_move
             v = self._board[ly * n + lx]
             marker = QColor("#f4f6fa") if v == BLACK else QColor(theme.BOARD_LINE)
@@ -160,9 +179,17 @@ class BoardWidget(QWidget):
             mr = r * 0.34
             p.drawEllipse(self._center(lx, ly), mr, mr)
 
-        # Candidate-move overlay (on top).
-        if self._analysis is not None and self._show_analysis:
+        # A hovered candidate's variation takes over the overlay; else candidate discs.
+        if self._pv_preview:
+            self._draw_pv_preview(p, r, n)
+        elif self._analysis is not None and self._show_analysis:
             self._draw_candidates(p, r, n)
+
+        # Ghost stone at the hovered intersection (next-move preview).
+        if (self._pv_preview is None and self._movable
+                and self._hover_point is not None
+                and self._board[self._hover_point[1] * n + self._hover_point[0]] == EMPTY):
+            self._draw_ghost(p, self._center(*self._hover_point), r, self._to_move)
 
         p.end()
 
@@ -219,6 +246,48 @@ class BoardWidget(QWidget):
             p.drawText(QRectF(c.x() - r, c.y() + r * 0.05, 2 * r, r * 0.85),
                        Qt.AlignCenter, f"{sc:+.1f}")
 
+    def _label_color(self, stone_color: int) -> QColor:
+        return QColor("#f4f6fa") if stone_color == BLACK else QColor("#15181e")
+
+    def _draw_move_numbers(self, p: QPainter, r: float, n: int) -> None:
+        font = QFont()
+        font.setBold(True)
+        for y in range(n):
+            row = y * n
+            for x in range(n):
+                v = self._board[row + x]
+                num = self._move_no[row + x] if self._move_no else 0
+                if v == EMPTY or num <= 0:
+                    continue
+                font.setPixelSize(int(max(7, r * (1.05 if num < 100 else 0.78))))
+                p.setFont(font)
+                p.setPen(QPen(self._label_color(v)))
+                c = self._center(x, y)
+                p.drawText(QRectF(c.x() - r, c.y() - r, 2 * r, 2 * r), Qt.AlignCenter, str(num))
+
+    def _draw_pv_preview(self, p: QPainter, r: float, n: int) -> None:
+        font = QFont()
+        font.setBold(True)
+        for i, (x, y) in enumerate(self._pv_preview[:10]):
+            if not (0 <= x < n and 0 <= y < n):
+                break   # truncate rather than skip, so color parity / numbering stay aligned
+            color = self._pv_start_color if i % 2 == 0 else opponent(self._pv_start_color)
+            c = self._center(x, y)
+            p.save()
+            p.setOpacity(0.9)
+            self._draw_stone(p, c, r, color)
+            p.restore()
+            font.setPixelSize(int(max(7, r * (1.0 if i + 1 < 10 else 0.82))))
+            p.setFont(font)
+            p.setPen(QPen(self._label_color(color)))
+            p.drawText(QRectF(c.x() - r, c.y() - r, 2 * r, 2 * r), Qt.AlignCenter, str(i + 1))
+
+    def _draw_ghost(self, p: QPainter, center: QPointF, r: float, color: int) -> None:
+        p.save()
+        p.setOpacity(0.4)
+        self._draw_stone(p, center, r, color)
+        p.restore()
+
     def _draw_coords(self, p: QPainter, ox: float, oy: float, cell: float, n: int) -> None:
         font = QFont()
         font.setPixelSize(int(max(8, cell * 0.34)))
@@ -254,6 +323,17 @@ class BoardWidget(QWidget):
         pt = self._point_at(pos.x(), pos.y())
         if pt is not None:
             self.moveRequested.emit(pt)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        pt = self._point_at(event.position().x(), event.position().y()) if self._movable else None
+        if pt != self._hover_point:
+            self._hover_point = pt
+            self.update()
+
+    def leaveEvent(self, _event) -> None:
+        if self._hover_point is not None:
+            self._hover_point = None
+            self.update()
 
     def sizeHint(self) -> QSize:
         return QSize(640, 640)

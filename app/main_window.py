@@ -37,6 +37,8 @@ class MainWindow(QWidget):
         self.controller.positionChanged.connect(self._on_position)
         self.controller.statusChanged.connect(self.sidebar.set_status)
         self.controller.analysisUpdated.connect(self._on_analysis)
+        self.sidebar.viewToggled.connect(self._on_view_toggled)
+        self.sidebar.pvPreview.connect(self._on_pv_preview)
         I18N.languageChanged.connect(self._retranslate)
 
         self._on_position()
@@ -47,9 +49,24 @@ class MainWindow(QWidget):
         self.sidebar.retranslate()
         self.controller.refresh_status()
 
+    def _on_view_toggled(self, option: str, checked: bool) -> None:
+        if option == "candidates":
+            self.board.set_show_analysis(checked)
+        elif option == "territory":
+            self.board.set_show_ownership(checked)
+        elif option == "order":
+            self.board.set_show_order(checked)
+
+    def _on_pv_preview(self, data) -> None:
+        if data:
+            points, start_color = data
+            self.board.set_pv_preview(points, start_color)
+        else:
+            self.board.set_pv_preview(None)
+
     def _on_position(self) -> None:
         b = self.controller.view_board()
-        self.board.set_position(b.board, b.size, b.last_move, b.to_move)  # clears overlays
+        self.board.set_position(b.board, b.size, b.last_move, b.to_move, b.move_no)
         self.sidebar.clear_analysis()
         self.sidebar.refresh_moves()
         human_turn = (self.controller.is_live and not self.controller.game_over
