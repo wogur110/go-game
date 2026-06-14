@@ -8,7 +8,7 @@ It aims for UI/features similar to the chess app
 but the moves are predicted by KataGo rather than a built-in engine.
 
 - **Analysis:** KataGo **28-block (b28)** network — win rate, score lead, candidate moves, ownership
-- **Analysis-engine selector:** switch between **40-block (strongest, slow) / 28-block (recommended) / 18-block (fast)** in the sidebar — pick the stronger 40-block (zhizi, ~430 Elo↑) and if it isn't present yet a progress dialog **downloads it on demand** and applies it immediately
+- **Analysis-engine selector:** switch between **40-block (strongest, slow) / 28-block (recommended) / 18-block (fast)** in the sidebar — pick the stronger 40-block (zhizi, ~430 Elo↑) and if it isn't present yet a progress dialog **downloads it on demand**. While the engine reloads, the status dot stays **amber (loading)** and turns **green (ready)** only once the new network is fully on the GPU
 - **Opponent:** KataGo **human-net** (human imitation) — rank-based difficulty from 20k to 9d/pro
 - **Language:** Korean / English — switch from the top of the sidebar (preference is saved)
 - **Engine status:** the sidebar shows model **loading / ready** at startup (colored indicator)

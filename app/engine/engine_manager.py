@@ -64,6 +64,15 @@ class EngineManager(QObject):
         self._cap_timer.setSingleShot(True)
         self._cap_timer.timeout.connect(self._on_cap_timeout)
         self._ready = False
+        # Status gating for analysis (re)loads: _restart_seq bumps on every reload;
+        # the indicator is "loading" while _ready_seq < _restart_seq and flips to
+        # "ready"/"error" only for the latest reload. Guarded by _state_lock so the
+        # reader thread's verdict and a concurrent switch can't interleave into a
+        # stale "ready". _ready_seq == _restart_seq means the latest reload settled.
+        self._restart_seq = 0
+        self._ready_seq = 0
+        self._spawned_model: Optional[str] = None
+        self._state_lock = threading.Lock()
 
     @property
     def available(self) -> bool:
@@ -101,38 +110,81 @@ class EngineManager(QObject):
 
     def _start_engines(self) -> None:
         try:
-            started_model = self._analysis_model
-            self._analysis = AnalysisClient(
-                self._katago, self._analysis_cfg, started_model,
-                self._on_analysis_result, self.engineError.emit)
-            self._analysis.start()
+            self._spawn_analysis()                 # Popen; the net loads in the background
             self._play = GtpClient(
                 self._katago, self._gtp_cfg, self._play_model, self._human,
                 board_size=self.board_size, komi=self.komi, rules=self.rules)
-            self._play.start()
+            self._play.start()                     # blocks until the play engine is ready
             self._play_thread = threading.Thread(
                 target=self._play_loop, name="engine-play", daemon=True)
             self._play_thread.start()
             self._ready = True
-            # A network switch during the (slow) load updated _analysis_model after
-            # we captured started_model — honour it now that we're ready.
-            if self._analysis_model != started_model:
-                self._restart_analysis()
-            self.engineState.emit("ready")
-            self.enginesReady.emit()
+            self.enginesReady.emit()               # play works; the net selector can be used
+            # Honour a network switch made during the (slow) load, then gate the
+            # "ready" light on the analysis net answering — so the dot turns green
+            # only once BOTH play and analysis are loaded.
+            if self._analysis_model != self._spawned_model:
+                self._spawn_analysis()
+            self._probe_ready()
         except Exception as exc:  # noqa: BLE001
-            self.engineState.emit("error")
+            with self._state_lock:
+                self._ready_seq = self._restart_seq   # mark settled: a late probe can't flip to ready
+                self.engineState.emit("error")
             self.engineError.emit(t("err.start_failed", exc=exc))
 
-    def _restart_analysis(self) -> None:
-        if self._analysis:
-            self._analysis.stop()
+    def _spawn_analysis(self) -> None:
+        """(Re)create the analysis subprocess for the current model and show 'loading'.
+        Non-blocking: the old client is stopped on a daemon thread (its proc.wait can
+        take up to 3s and must never freeze the GUI on a net switch), and the new net
+        loads asynchronously. Readiness is signalled later via _probe_ready. The new
+        client's on_exit is stamped with this reload's seq, so a death of the old/
+        superseded client can never flip the latest reload's indicator (errors are
+        only surfaced, never used to settle the dot)."""
+        with self._state_lock:
+            self._restart_seq += 1
+            seq = self._restart_seq
+            self.engineState.emit("loading")
+        self._spawned_model = self._analysis_model
+        old, self._analysis = self._analysis, None
         self._analysis_query_id = None      # old query belonged to the dead subprocess
         self._cap_timer.stop()
-        self._analysis = AnalysisClient(
-            self._katago, self._analysis_cfg, self._analysis_model,
-            self._on_analysis_result, self.engineError.emit)
-        self._analysis.start()
+        if old is not None:
+            threading.Thread(target=old.stop, name="engine-stop", daemon=True).start()
+        client = AnalysisClient(
+            self._katago, self._analysis_cfg, self._spawned_model,
+            self._on_analysis_result, self.engineError.emit,
+            on_exit=lambda s=seq: self._settle(s, "error"))
+        self._analysis = client
+        client.start()
+
+    def _probe_ready(self) -> None:
+        """Hold the status at 'loading' until the (re)loaded analysis net answers a
+        tiny warm-up query. KataGo can't analyse until the net is on the GPU, so a
+        reply (handled in _on_analysis_result) means it's loaded — only then flip the
+        indicator to 'ready'. If the query can't even be queued, fall to 'error' so it
+        never hangs on 'loading'."""
+        seq = self._restart_seq
+        client = self._analysis
+        sent = client is not None and client.analyze(
+            f"_ready_{seq}", [], board_size=self.board_size, komi=self.komi,
+            rules=self.rules, max_visits=2, include_ownership=False)
+        if not sent:
+            self._settle(seq, "error")
+
+    def _settle(self, seq: int, state: str) -> None:
+        """Emit the terminal status for reload ``seq`` (``ready``/``error``) exactly
+        once, and only if it is still the latest reload — so a stale probe reply or
+        a superseded/dying client's death can't overwrite a newer load's indicator."""
+        with self._state_lock:
+            if seq == self._restart_seq and self._ready_seq < seq:
+                self._ready_seq = seq
+                self.engineState.emit(state)
+
+    def _restart_analysis(self) -> None:
+        """Swap the analysis engine to the current model (e.g. after a net switch)
+        and hold the indicator on 'loading' until the new net is ready."""
+        self._spawn_analysis()
+        self._probe_ready()
 
     def set_rules(self, komi: float, rules: str) -> None:
         """Update komi/rules (e.g. after loading an SGF) for analysis and play."""
@@ -191,6 +243,13 @@ class EngineManager(QObject):
             rules=self.rules, max_visits=visits, include_ownership=True)
 
     def _on_analysis_result(self, id_str: str, result) -> None:
+        if id_str.startswith("_ready_"):        # warm-up probe reply (runs on reader thread)
+            try:
+                seq = int(id_str[len("_ready_"):])
+            except ValueError:
+                return
+            self._settle(seq, "ready")          # the (re)loaded net answered → ready
+            return
         if id_str == "est":
             self.estimateReady.emit(result)
             return

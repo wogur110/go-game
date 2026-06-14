@@ -39,12 +39,14 @@ class AnalysisClient:
         model_path: str,
         on_result: Callable[[str, AnalysisResult], None],
         on_error: Callable[[str], None],
+        on_exit: Optional[Callable[[], None]] = None,
     ) -> None:
         self._katago = katago_path
         self._config = config_path
         self._model = model_path
         self._on_result = on_result
         self._on_error = on_error
+        self._on_exit = on_exit       # called once when the subprocess's stdout closes (it died)
         self._proc: Optional[subprocess.Popen] = None
         self._reader: Optional[threading.Thread] = None
         self._stderr_reader: Optional[threading.Thread] = None
@@ -174,6 +176,11 @@ class AnalysisClient:
                     self._sizes.pop(qid, None)
         finally:
             self._alive = False
+            if self._on_exit is not None:
+                try:
+                    self._on_exit()         # notify the manager the engine is gone
+                except Exception:           # noqa: BLE001
+                    pass
 
     def _read_stderr(self) -> None:
         proc = self._proc
