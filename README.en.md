@@ -15,6 +15,7 @@ but the moves are predicted by KataGo rather than a built-in engine.
 - **Score estimate:** one button runs a deep (high-visit) analysis and shows **each side's territory** on the board plus **who leads by how many points**
 - **Lizzie-style UI:** a bottom **win-rate graph** (Black win rate over the whole game, click to jump) + **heatmap candidate moves** (blue=best→red, win% + visits) + a board-centric layout
 - **Shortcuts & auto-analyze:** `Space` (toggle analysis) · `←/→` (navigate) · `Home/End` · `A` (**auto-analyze** — step through the whole game) · `P` (pass) · `Ctrl+Z` (undo)
+- **Continuous analysis (Lizzie-style):** candidates within ~0.5s, then it keeps pondering — visits and win rates refine live (up to 3 min; restarts when the position changes)
 
 **▶ [Download the latest Windows build](https://github.com/wogur110/go-game/releases/latest)** — extract the
 zip and run `BadukStudio.exe`. On first launch the app downloads the KataGo engine (OpenCL by default) and

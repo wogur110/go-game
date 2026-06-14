@@ -93,9 +93,10 @@ class AnalysisClient:
         rules: str,
         max_visits: int,
         include_ownership: bool = True,
+        report_every: Optional[float] = None,
     ) -> bool:
         """Queue an analysis of the position reached by ``moves``. Returns False if the
-        query could not be sent (engine not alive / write failed)."""
+        query could not be sent. ``report_every`` (seconds) streams partial results."""
         if not self.alive:
             return False
         query = {
@@ -109,6 +110,8 @@ class AnalysisClient:
             "includeOwnership": include_ownership,
             "includePolicy": False,
         }
+        if report_every is not None:
+            query["reportDuringSearchEvery"] = report_every
         line = json.dumps(query) + "\n"
         with self._write_lock:
             self._sizes[analysis_id] = board_size
@@ -121,6 +124,19 @@ class AnalysisClient:
                 self._on_error(f"KataGo(analysis) 쓰기 실패: {exc}")
                 return False
         return True
+
+    def terminate(self, query_id: str) -> None:
+        """Abort a running query; its latest partial result (if any) stays shown."""
+        if not self.alive:
+            return
+        msg = json.dumps({"id": "_term", "action": "terminate", "terminateId": query_id}) + "\n"
+        with self._write_lock:
+            try:
+                assert self._proc and self._proc.stdin
+                self._proc.stdin.write(msg)
+                self._proc.stdin.flush()
+            except Exception:  # noqa: BLE001
+                pass
 
     # -- reader threads --
 
@@ -136,20 +152,26 @@ class AnalysisClient:
                     obj = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                qid = obj.get("id", "")
+                final = not obj.get("isDuringSearch")
                 if "error" in obj:
-                    self._sizes.pop(obj.get("id", ""), None)   # don't leak the size entry
+                    self._sizes.pop(qid, None)
                     self._on_error(f"KataGo(analysis): {obj['error']}")
                     continue
-                if obj.get("isDuringSearch"):
-                    continue  # act only on the final result, not streaming partials
-                try:
-                    result = self._parse(obj)
-                except Exception as exc:  # noqa: BLE001
-                    # one malformed result must not kill analysis for the session
-                    self._on_error(f"KataGo(analysis) 결과 파싱 실패: {exc}")
+                if obj.get("noResults") or not obj.get("moveInfos"):
+                    # terminated before any visits / nothing to show
+                    if final:
+                        self._sizes.pop(qid, None)
                     continue
+                try:
+                    result = self._parse(obj)        # partials stream during the search
+                except Exception as exc:  # noqa: BLE001
+                    self._on_error(f"KataGo(analysis) 결과 파싱 실패: {exc}")
+                    result = None
                 if result is not None:
-                    self._on_result(obj.get("id", ""), result)
+                    self._on_result(qid, result)
+                if final:
+                    self._sizes.pop(qid, None)
         finally:
             self._alive = False
 
@@ -161,7 +183,7 @@ class AnalysisClient:
             pass
 
     def _parse(self, obj: dict) -> Optional[AnalysisResult]:
-        size = self._sizes.pop(obj.get("id", ""), 19)
+        size = self._sizes.get(obj.get("id", ""), 19)   # popped on the final result
         move_infos: List[MoveInfo] = []
         for mi in obj.get("moveInfos", []):
             vertex = mi.get("move", "")

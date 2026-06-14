@@ -13,7 +13,7 @@ import queue
 import threading
 from typing import List, Optional, Tuple
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 
 from ..i18n import t
 from .analysis_client import AnalysisClient
@@ -24,6 +24,12 @@ from .networks import NETWORKS
 _STOP = object()
 
 GtpMove = Tuple[str, str]  # (color letter "B"/"W", vertex)
+
+# Lizzie-style continuous analysis: stream partial results and keep deepening
+# until the position changes or this many ms elapse (then KataGo is told to stop).
+CONTINUOUS_MAX_VISITS = 1_000_000_000
+CONTINUOUS_REPORT_EVERY = 0.4
+CONTINUOUS_CAP_MS = 180_000          # 3 minutes
 
 
 class EngineManager(QObject):
@@ -52,6 +58,11 @@ class EngineManager(QObject):
         self._play: Optional[GtpClient] = None
         self._play_queue: "queue.Queue" = queue.Queue()
         self._play_thread: Optional[threading.Thread] = None
+        self._analysis_query_id: Optional[str] = None   # current continuous query
+        self._cap_qid: Optional[str] = None
+        self._cap_timer = QTimer(self)                   # single 3-min cap (restarted per request)
+        self._cap_timer.setSingleShot(True)
+        self._cap_timer.timeout.connect(self._on_cap_timeout)
         self._ready = False
 
     @property
@@ -116,6 +127,8 @@ class EngineManager(QObject):
     def _restart_analysis(self) -> None:
         if self._analysis:
             self._analysis.stop()
+        self._analysis_query_id = None      # old query belonged to the dead subprocess
+        self._cap_timer.stop()
         self._analysis = AnalysisClient(
             self._katago, self._analysis_cfg, self._analysis_model,
             self._on_analysis_result, self.engineError.emit)
@@ -133,12 +146,40 @@ class EngineManager(QObject):
 
     # -- analysis -------------------------------------------------------------
 
-    def request_analysis(self, moves: List[GtpMove], generation: int) -> None:
+    def request_analysis(self, moves: List[GtpMove], generation: int,
+                         continuous: bool = True) -> None:
         if not self._ready or not self._analysis:
             return
-        self._analysis.analyze(
-            str(generation), moves, board_size=self.board_size, komi=self.komi,
-            rules=self.rules, max_visits=self.analysis_visits, include_ownership=True)
+        # Stop any previous continuous query (and its cap) before the new position.
+        if self._analysis_query_id is not None:
+            self._analysis.terminate(self._analysis_query_id)
+            self._analysis_query_id = None
+        self._cap_timer.stop()
+        qid = str(generation)
+        if continuous:
+            self._analysis_query_id = qid
+            self._cap_qid = qid
+            self._analysis.analyze(
+                qid, moves, board_size=self.board_size, komi=self.komi, rules=self.rules,
+                max_visits=CONTINUOUS_MAX_VISITS, include_ownership=True,
+                report_every=CONTINUOUS_REPORT_EVERY)
+            self._cap_timer.start(CONTINUOUS_CAP_MS)
+        else:
+            self._analysis.analyze(
+                qid, moves, board_size=self.board_size, komi=self.komi,
+                rules=self.rules, max_visits=self.analysis_visits, include_ownership=True)
+
+    def _on_cap_timeout(self) -> None:
+        if self._cap_qid == self._analysis_query_id and self._analysis is not None:
+            self._analysis.terminate(self._cap_qid)   # 3-min cap reached; last result stays
+            self._analysis_query_id = None
+
+    def stop_analysis(self) -> None:
+        """Abort the running continuous analysis (e.g. when analysis is paused)."""
+        self._cap_timer.stop()
+        if self._analysis_query_id is not None and self._analysis is not None:
+            self._analysis.terminate(self._analysis_query_id)
+            self._analysis_query_id = None
 
     def request_estimate(self, moves: List[GtpMove], visits: int = 1500) -> bool:
         """One-shot high-visit analysis (with ownership) for a precise score estimate.

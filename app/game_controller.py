@@ -62,6 +62,7 @@ class GameController(QObject):
         self._last_analysis_index = -1     # move-index _last_analysis describes
         self._estimate_gen = -1            # generation a score estimate was requested at
         self._winrate_history: dict = {}   # move index -> Black win rate (for the graph)
+        self._winrate_visits: dict = {}    # move index -> visits of the recorded sample
         self._analysis_enabled = True      # space toggles continuous analysis on/off
         self._auto_analyze = False         # auto-step through the game analysing each move
 
@@ -122,6 +123,7 @@ class GameController(QObject):
         self._last_analysis = None
         self._last_analysis_index = -1
         self._winrate_history = {}
+        self._winrate_visits = {}
         self._refresh()
 
     def make_move(self, point: Optional[Point]) -> bool:
@@ -188,6 +190,7 @@ class GameController(QObject):
 
     def refresh_analysis(self) -> None:
         """Re-request analysis for the current view (e.g. after switching network)."""
+        self._generation += 1           # fresh query id; invalidate any stale in-flight result
         self._request_analysis()
 
     def request_estimate(self) -> bool:
@@ -227,6 +230,7 @@ class GameController(QObject):
         self._last_analysis = None
         self._last_analysis_index = -1
         self._winrate_history = {}
+        self._winrate_visits = {}
         self._view = len(self._moves)
         self._refresh()
         return True
@@ -256,6 +260,7 @@ class GameController(QObject):
         self._maybe_ai()
 
     def _on_engines_ready(self) -> None:
+        self._generation += 1
         self._request_analysis()
         self._maybe_ai()
         self._emit_status()
@@ -267,7 +272,9 @@ class GameController(QObject):
         if self._resigned is not None or not self._analysis_enabled:
             return
         self._pending_analysis_index = self._view
-        self.engine.request_analysis(self._gtp_moves(self._view), self._generation)
+        # Continuous (Lizzie-style) pondering normally; one-shot while auto-analyzing.
+        self.engine.request_analysis(self._gtp_moves(self._view), self._generation,
+                                     continuous=not self._auto_analyze)
 
     def _maybe_ai(self) -> None:
         if not self.is_live or self.game_over or self._thinking:
@@ -316,7 +323,10 @@ class GameController(QObject):
         self._winrate = result.root_winrate
         self._last_analysis = result
         self._last_analysis_index = self._pending_analysis_index
-        self._winrate_history[self._pending_analysis_index] = result.root_winrate
+        idx = self._pending_analysis_index   # keep the highest-visit sample per position
+        if result.visits >= self._winrate_visits.get(idx, -1):
+            self._winrate_history[idx] = result.root_winrate
+            self._winrate_visits[idx] = result.visits
         self.analysisUpdated.emit(result)
         self._emit_status()
         if self._auto_analyze:
@@ -334,6 +344,7 @@ class GameController(QObject):
         n = len(self._moves)
         for k in [k for k in self._winrate_history if k > n]:
             del self._winrate_history[k]
+            self._winrate_visits.pop(k, None)
 
     # -- analysis on/off + auto-analyze (keyboard: space / 'a') ----------------
 
@@ -351,9 +362,12 @@ class GameController(QObject):
         self._analysis_enabled = enabled
         self.analysisEnabledChanged.emit(enabled)
         if enabled:
+            self._generation += 1
             self._request_analysis()
-        elif self._auto_analyze:
-            self.set_auto_analyze(False)
+        else:
+            self.engine.stop_analysis()
+            if self._auto_analyze:
+                self.set_auto_analyze(False)
 
     def toggle_analysis(self) -> None:
         self.set_analysis_enabled(not self._analysis_enabled)
