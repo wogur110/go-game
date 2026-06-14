@@ -7,8 +7,9 @@ KataGo 신경망을 **실제 GPU**로 구동하는 바둑 데스크톱 프로그
 - **분석:** KataGo **28블록(b28)** 네트워크 — 승률·집수·후보수·영역(ownership)
 - **대국 상대:** KataGo **휴먼넷**(사람 모방) — 20급~9단/프로 급수별 난이도
 
-> 현재 상태: **M0 (엔진 연동 스파이크) 완료 — RTX 5060 Ti(Blackwell) + WSL2에서 GPU 동작 검증됨.**
-> 분석(b28) + 휴먼넷 대국 모두 정상. GUI는 M1부터 올라갑니다 — 아래 로드맵 참고.
+> 현재 상태: **M1 진행 — 사람 vs 휴먼넷 실제 대국 가능 (GPU 검증됨).**
+> 규칙 엔진(따냄/패/자살수/패스)·보드 위젯·대국 흐름 동작. 다음은 분석 오버레이/사이드바(M2).
+> RTX 5060 Ti(Blackwell) + WSL2에서 검증 — `python main.py` 로 실행.
 
 ## 개발 결정 (확정)
 
@@ -30,8 +31,13 @@ CUDA/cuDNN을 따로 설치할 필요가 없습니다 — 필요한 런타임은
 ```bash
 pip install -r requirements.txt   # PySide6 + sgfmill + CUDA12 런타임(cudnn/cublas/cudart) 휠
 python download_katago.py         # KataGo cuda12.8 빌드 + 네트워크(b28/b18/휴먼넷) 다운로드
-python -m app.engine.smoke        # GPU 연동 점검 → 성공 시 exit 0
+python -m app.engine.smoke        # 엔진 연동 점검 (분석 + 휴먼넷 genmove)
+python main.py --smoke            # 대국 통합 점검 (사람→AI 왕복, 헤드리스)
+python main.py                    # GUI 실행 (사람 vs 휴먼넷 대국)
 ```
+
+> conda 사용 시: `conda create -n go-game python=3.11 -y && conda run -n go-game pip install -r requirements.txt`,
+> 이후 `conda run -n go-game python main.py`.
 
 `download_katago.py`가 받는 것 (둘 다 git 미포함):
 - 엔진 바이너리 → `engines/<os>/` (GitHub 릴리스 `v1.16.5`에서 OS/백엔드 에셋 자동 선택, 기본 `cuda12.8`)
@@ -76,10 +82,9 @@ app/
 ## 로드맵
 
 - **M0 — 엔진 스파이크 ✅** : 다운로더, 분석/휴먼넷 클라이언트, 헤드리스 점검
-- **M1 — 바둑 규칙 + 보드 위젯** : 착수/따냄/패/자살수/패스, 19로 렌더링, 클릭 착수,
-  `GameController`(세대 카운터·Human/AI 모드), Qt `EngineManager`
-- **M2 — 분석 UI** : 승률·집수 바, 후보수 오버레이, ownership 히트맵, 네트워크 선택 드롭다운
-- **M3 — 대국 흐름** : 급수 슬라이더(휴먼넷), Human/AI, undo/리뷰, 패스/기권, 종국·집계산
-- **M4 — SGF 저장/로드/리뷰**, 다크 테마 마감
-- **M5 — 패키징** : PyInstaller `go_studio.spec`, `build_windows.bat`, GitHub Actions Windows 릴리스
+- **M1 — 규칙 + 보드 + 대국 ✅** : 규칙 엔진(따냄/패/자살수/패스/집계산), 보드 위젯(렌더·클릭 착수),
+  `GameController`(세대 카운터·Human/AI·undo·리뷰), Qt `EngineManager`, 사람↔휴먼넷 실제 대국
+- **M2 — 분석 UI** : 승률·집수 바, 후보수 오버레이, ownership 히트맵, 네트워크 선택, 사이드바(수순·추천 패널)
+- **M3 — 종국 처리** : 두 번 패스 후 KataGo 집계산, 사석 정리, SGF 저장/로드/리뷰
+- **M4 — 마감 + 패키징** : 다크 테마 정리, PyInstaller `go_studio.spec`, `build_windows.bat`, GitHub Actions Windows 릴리스
 - **v2** : 조이(joseki)/포석(fuseki) study 탭

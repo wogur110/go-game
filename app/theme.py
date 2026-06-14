@@ -37,3 +37,21 @@ LAST_MOVE = "#e23b3b"        # last-move marker
 OWN_BLACK = "#101216"        # ownership tinted toward Black
 OWN_WHITE = "#f2f4f8"        # ownership tinted toward White
 CANDIDATE = ("#3fb56b", "#46a1e1", "#9a6cd0")  # top-3 candidate move tints
+
+
+def build_stylesheet() -> str:
+    """Minimal dark Qt stylesheet (sibling to Chess Studio's theme)."""
+    return f"""
+    QWidget {{ background: {BG_MAIN}; color: {TEXT}; font-size: 13px; }}
+    QLabel {{ color: {TEXT_DIM}; }}
+    QLabel#Status {{ color: {TEXT}; font-size: 14px; padding: 2px 0; }}
+    QPushButton {{ background: {BG_PANEL_LIGHT}; border: 1px solid #2c323d;
+                   border-radius: 6px; padding: 7px 10px; color: {TEXT}; }}
+    QPushButton:hover {{ background: #2a3140; }}
+    QPushButton:pressed {{ background: #313a4b; }}
+    QPushButton:disabled {{ color: {TEXT_MUTED}; }}
+    QComboBox {{ background: {BG_PANEL_LIGHT}; border: 1px solid #2c323d;
+                 border-radius: 6px; padding: 5px 8px; color: {TEXT}; }}
+    QComboBox QAbstractItemView {{ background: {BG_PANEL}; color: {TEXT};
+                 selection-background-color: {ACCENT}; }}
+    """

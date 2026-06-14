@@ -1,0 +1,146 @@
+"""Qt wrapper that owns both KataGo clients and marshals results to the GUI.
+
+Mirrors Chess Studio's EngineManager: an *analysis* role (b28, full strength →
+eval/overlays) and a *play* role (human-net GTP → rank-based moves). Engines
+start on a background thread (model load is slow); the play role runs genmoves on
+its own worker thread with a latest-wins queue so stale requests are dropped.
+Results come back as Qt signals (queued onto the GUI thread).
+"""
+
+from __future__ import annotations
+
+import queue
+import threading
+from typing import List, Optional, Tuple
+
+from PySide6.QtCore import QObject, Signal
+
+from .analysis_client import AnalysisClient
+from .discovery import find_config, find_katago, find_model
+from .gtp_client import GtpClient
+from .networks import NETWORKS
+
+_STOP = object()
+
+GtpMove = Tuple[str, str]  # (color letter "B"/"W", vertex)
+
+
+class EngineManager(QObject):
+    analysisReady = Signal(int, object)   # generation, AnalysisResult
+    moveReady = Signal(int, str)          # generation, vertex ("q16" | "pass" | "resign")
+    engineError = Signal(str)
+    enginesReady = Signal()
+
+    def __init__(self, board_size: int = 19, komi: float = 7.5, rules: str = "chinese",
+                 analysis_visits: int = 600, parent: Optional[QObject] = None):
+        super().__init__(parent)
+        self.board_size = board_size
+        self.komi = komi
+        self.rules = rules
+        self.analysis_visits = analysis_visits
+        self._katago = find_katago()
+        self._b28 = find_model(NETWORKS["b28"].filename)
+        self._human = find_model(NETWORKS["human"].filename)
+        self._analysis_cfg = find_config("analysis.cfg")
+        self._gtp_cfg = find_config("gtp_human.cfg")
+        self._analysis: Optional[AnalysisClient] = None
+        self._play: Optional[GtpClient] = None
+        self._play_queue: "queue.Queue" = queue.Queue()
+        self._play_thread: Optional[threading.Thread] = None
+        self._ready = False
+
+    @property
+    def available(self) -> bool:
+        return all([self._katago, self._b28, self._human, self._analysis_cfg, self._gtp_cfg])
+
+    @property
+    def ready(self) -> bool:
+        return self._ready
+
+    def missing(self) -> List[str]:
+        items = {"katago": self._katago, "b28": self._b28, "human-net": self._human,
+                 "analysis.cfg": self._analysis_cfg, "gtp_human.cfg": self._gtp_cfg}
+        return [k for k, v in items.items() if not v]
+
+    # -- lifecycle ------------------------------------------------------------
+
+    def start(self) -> None:
+        if not self.available:
+            self.engineError.emit(
+                "엔진/네트워크/설정을 찾을 수 없습니다: " + ", ".join(self.missing())
+                + " — 먼저 `python download_katago.py` 를 실행하세요.")
+            return
+        threading.Thread(target=self._start_engines, name="engine-start", daemon=True).start()
+
+    def _start_engines(self) -> None:
+        try:
+            self._analysis = AnalysisClient(
+                self._katago, self._analysis_cfg, self._b28,
+                self._on_analysis_result, self.engineError.emit)
+            self._analysis.start()
+            self._play = GtpClient(
+                self._katago, self._gtp_cfg, self._b28, self._human,
+                board_size=self.board_size, komi=self.komi, rules=self.rules)
+            self._play.start()
+            self._play_thread = threading.Thread(
+                target=self._play_loop, name="engine-play", daemon=True)
+            self._play_thread.start()
+            self._ready = True
+            self.enginesReady.emit()
+        except Exception as exc:  # noqa: BLE001
+            self.engineError.emit(f"엔진 시작 실패: {exc}")
+
+    # -- analysis -------------------------------------------------------------
+
+    def request_analysis(self, moves: List[GtpMove], generation: int) -> None:
+        if not self._ready or not self._analysis:
+            return
+        self._analysis.analyze(
+            str(generation), moves, board_size=self.board_size, komi=self.komi,
+            rules=self.rules, max_visits=self.analysis_visits, include_ownership=True)
+
+    def _on_analysis_result(self, id_str: str, result) -> None:
+        try:
+            gen = int(id_str)
+        except (TypeError, ValueError):
+            return
+        self.analysisReady.emit(gen, result)
+
+    # -- play (human net) -----------------------------------------------------
+
+    def request_move(self, moves: List[GtpMove], generation: int,
+                     color: str, profile: str) -> None:
+        if not self._ready:
+            return
+        self._play_queue.put((generation, list(moves), color, profile))
+
+    def _play_loop(self) -> None:
+        while True:
+            job = self._play_queue.get()
+            while True:  # drain to the newest request
+                try:
+                    nxt = self._play_queue.get_nowait()
+                except queue.Empty:
+                    break
+                job = nxt
+            if job is _STOP:
+                break
+            generation, moves, color, profile = job
+            try:
+                assert self._play
+                self._play.set_profile(profile)
+                self._play.set_position(moves)
+                vertex = self._play.genmove(color)
+                self.moveReady.emit(generation, vertex)
+            except Exception as exc:  # noqa: BLE001
+                self.engineError.emit(f"대국 엔진 오류: {exc}")
+
+    # -- shutdown -------------------------------------------------------------
+
+    def shutdown(self) -> None:
+        self._ready = False
+        self._play_queue.put(_STOP)
+        if self._play:
+            self._play.stop()
+        if self._analysis:
+            self._analysis.stop()
