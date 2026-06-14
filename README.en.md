@@ -10,6 +10,7 @@ but the moves are predicted by KataGo rather than a built-in engine.
 - **Analysis:** KataGo **28-block (b28)** network — win rate, score lead, candidate moves, ownership
 - **Opponent:** KataGo **human-net** (human imitation) — rank-based difficulty from 20k to 9d/pro
 - **Language:** Korean / English — switch from the top of the sidebar (preference is saved)
+- **Engine status:** the sidebar shows model **loading / ready** at startup (colored indicator)
 
 **▶ [Download the latest Windows build](https://github.com/wogur110/go-game/releases/latest)** — extract the
 zip and run `BadukStudio.exe`. On first launch the app downloads the KataGo engine (OpenCL by default) and

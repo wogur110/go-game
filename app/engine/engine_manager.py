@@ -31,6 +31,7 @@ class EngineManager(QObject):
     moveReady = Signal(int, str)          # generation, vertex ("q16" | "pass" | "resign")
     engineError = Signal(str)
     enginesReady = Signal()
+    engineState = Signal(str)             # "missing" | "loading" | "ready" | "error"
 
     def __init__(self, board_size: int = 19, komi: float = 7.5, rules: str = "chinese",
                  analysis_visits: int = 600, parent: Optional[QObject] = None):
@@ -80,8 +81,10 @@ class EngineManager(QObject):
 
     def start(self) -> None:
         if not self.available:
+            self.engineState.emit("missing")
             self.engineError.emit(t("err.missing", items=", ".join(self.missing())))
             return
+        self.engineState.emit("loading")
         threading.Thread(target=self._start_engines, name="engine-start", daemon=True).start()
 
     def _start_engines(self) -> None:
@@ -103,8 +106,10 @@ class EngineManager(QObject):
             # we captured started_model — honour it now that we're ready.
             if self._analysis_model != started_model:
                 self._restart_analysis()
+            self.engineState.emit("ready")
             self.enginesReady.emit()
         except Exception as exc:  # noqa: BLE001
+            self.engineState.emit("error")
             self.engineError.emit(t("err.start_failed", exc=exc))
 
     def _restart_analysis(self) -> None:

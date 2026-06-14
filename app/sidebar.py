@@ -109,6 +109,14 @@ class Sidebar(QWidget):
         lang_row.addWidget(self.lang_combo, 1)
         lay.addLayout(lang_row)
 
+        # Engine state indicator (model loading / ready / missing / error).
+        self._engine_state = "loading" if engine.available else "missing"
+        self.engine_status = QLabel()
+        self.engine_status.setObjectName("EngineStatus")
+        lay.addWidget(self.engine_status)
+        self.engine.engineState.connect(self._on_engine_state)
+        self._render_engine_state()
+
         self.status = QLabel(t("status.loading"))
         self.status.setObjectName("Status")
         self.status.setWordWrap(True)
@@ -201,6 +209,18 @@ class Sidebar(QWidget):
             lambda _i, c=color, cb=combo: self.controller.set_player(c, cb.currentData()))
         return combo
 
+    _STATE_COLOR = {"missing": theme.BAD, "loading": theme.WARN,
+                    "ready": theme.GOOD, "error": theme.BAD}
+
+    def _on_engine_state(self, state: str) -> None:
+        self._engine_state = state
+        self._render_engine_state()
+
+    def _render_engine_state(self) -> None:
+        color = self._STATE_COLOR.get(self._engine_state, theme.TEXT_DIM)
+        self.engine_status.setText(
+            f"<span style='color:{color}'>●</span> {t('engine.' + self._engine_state)}")
+
     def _on_network(self, _i: int) -> None:
         key = self.net_combo.currentData()
         if self.engine.set_analysis_network(key):
@@ -233,6 +253,7 @@ class Sidebar(QWidget):
 
     def retranslate(self) -> None:
         self.lang_label.setText(t("ui.language"))
+        self._render_engine_state()
         self.black_label.setText(t("ui.black_player"))
         self.white_label.setText(t("ui.white_player"))
         for combo in (self.black_combo, self.white_combo):

@@ -80,6 +80,12 @@ STRINGS: dict[str, dict[str, str]] = {
     "src.katago": {"ko": "KataGo", "en": "KataGo"},
     "src.count": {"ko": "집계산", "en": "area count"},
 
+    # -- engine state (loading indicator) --
+    "engine.missing": {"ko": "엔진 없음 (다운로드 필요)", "en": "Engine missing (download needed)"},
+    "engine.loading": {"ko": "모델 로딩 중…", "en": "Loading model…"},
+    "engine.ready": {"ko": "엔진 준비 완료", "en": "Engine ready"},
+    "engine.error": {"ko": "엔진 오류", "en": "Engine error"},
+
     # -- engine errors --
     "err.missing": {
         "ko": "엔진/네트워크/설정을 찾을 수 없습니다: {items} — 먼저 엔진을 다운로드하세요.",
