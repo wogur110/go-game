@@ -9,12 +9,14 @@ non-destructive review. It drives the human-net opponent and live analysis.
 from __future__ import annotations
 
 from enum import Enum, auto
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from .engine.coords import from_gtp, to_gtp
 from .goban import BLACK, COLOR_LETTER, WHITE, Goban, opponent
+from .sgf_io import from_sgf, to_sgf
 
 Point = Tuple[int, int]
 Move = Tuple[int, Optional[Point]]   # (color, point|None-for-pass)
@@ -41,6 +43,8 @@ class GameController(QObject):
         self.komi = komi
         self.rules = rules
         self._moves: List[Move] = []
+        self._setup_black: List[Point] = []
+        self._setup_white: List[Point] = []
         self._players = {BLACK: PlayerKind.HUMAN, WHITE: PlayerKind.AI}
         self._rank = "rank_5k"
         self._generation = 0
@@ -59,6 +63,8 @@ class GameController(QObject):
 
     def board_at(self, n: int) -> Goban:
         g = Goban(self.size, self.komi)
+        if self._setup_black or self._setup_white:
+            g.place_setup(self._setup_black, self._setup_white)
         for color, mv in self._moves[:n]:
             g.play(mv, color)
         return g
@@ -96,9 +102,12 @@ class GameController(QObject):
 
     def new_game(self) -> None:
         self._moves = []
+        self._setup_black = []
+        self._setup_white = []
         self._view = 0
         self._resigned = None
         self._winrate = None
+        self._last_analysis = None
         self._refresh()
 
     def make_move(self, point: Optional[Point]) -> bool:
@@ -162,6 +171,46 @@ class GameController(QObject):
         """Re-request analysis for the current view (e.g. after switching network)."""
         self._request_analysis()
 
+    # -- SGF ------------------------------------------------------------------
+
+    def save_sgf(self, path: str) -> None:
+        data = to_sgf(self._moves, self.size, self.komi, rules=self.rules,
+                      setup_black=self._setup_black, setup_white=self._setup_white,
+                      result=self._sgf_result())
+        Path(path).write_bytes(data)
+
+    def load_sgf(self, path: str) -> bool:
+        info = from_sgf(Path(path).read_bytes())
+        if info["size"] != self.size:
+            self.statusChanged.emit(
+                f"{info['size']}×{info['size']} 기보는 현재 미지원 (이 앱은 {self.size}로 전용)")
+            return False
+        self.komi = info["komi"]
+        self.rules = info["rules"]
+        self._setup_black = info["setup_black"]
+        self._setup_white = info["setup_white"]
+        self._moves = info["moves"]
+        self._resigned = None
+        self._winrate = None
+        self._last_analysis = None
+        self._view = len(self._moves)
+        self._refresh()
+        return True
+
+    def _sgf_result(self) -> str:
+        if self._resigned is not None:
+            return "B+R" if opponent(self._resigned) == BLACK else "W+R"
+        if not self.live_board().is_over:
+            return ""
+        score = self._final_score()
+        if score is None:
+            return ""
+        if score > 0:
+            return f"B+{score:.1f}"
+        if score < 0:
+            return f"W+{-score:.1f}"
+        return "0"
+
     # -- engine flow ----------------------------------------------------------
 
     def _refresh(self) -> None:
@@ -178,7 +227,10 @@ class GameController(QObject):
         self._emit_status()
 
     def _request_analysis(self) -> None:
-        if self.view_board().is_over:
+        # Analyse every position — including a two-pass terminal one, whose
+        # rootInfo.scoreLead is KataGo's final score. (Resigned games have no
+        # position worth scoring.)
+        if self._resigned is not None:
             return
         self.engine.request_analysis(self._gtp_moves(self._view), self._generation)
 
@@ -229,16 +281,25 @@ class GameController(QObject):
 
     # -- status ---------------------------------------------------------------
 
+    def _final_score(self) -> Optional[float]:
+        """Black-relative final score: KataGo's scoreLead if analysed, else a Tromp-Taylor count."""
+        if self._last_analysis is not None:
+            return self._last_analysis.root_score_lead
+        return self.live_board().area_score()
+
     def _result_text(self) -> str:
         if self._resigned is not None:
             winner = "백" if opponent(self._resigned) == WHITE else "흑"
             return f"{winner} 불계승 (상대 기권)"
-        score = self.live_board().area_score()   # Tromp-Taylor estimate (KataGo scoring in M3)
+        score = self._final_score()
+        src = "KataGo" if self._last_analysis is not None else "집계산"
+        if score is None:
+            return "집계산 중…"
         if score > 0:
-            return f"흑 {score:+.1f}집 (집계산 추정)"
+            return f"흑 {score:.1f}집승 ({src})"
         if score < 0:
-            return f"백 {-score:.1f}집 (집계산 추정)"
-        return "빅 (무승부 추정)"
+            return f"백 {-score:.1f}집승 ({src})"
+        return f"무승부/빅 ({src})"
 
     def _emit_status(self) -> None:
         if not self.is_live:

@@ -201,6 +201,15 @@ class Goban:
             self.to_move = WHITE
         self._history = {self._board_hash(self.board)}
 
+    def place_setup(self, black: List[Point], white: List[Point]) -> None:
+        """Place black/white setup stones (handicap or SGF AB/AW). Handicap → White to move."""
+        for p in black:
+            self.board[self._idx(p)] = BLACK
+        for p in white:
+            self.board[self._idx(p)] = WHITE
+        self.to_move = WHITE if (black and not white) else BLACK
+        self._history = {self._board_hash(self.board)}
+
     def copy(self) -> "Goban":
         g = Goban.__new__(Goban)
         g.size = self.size

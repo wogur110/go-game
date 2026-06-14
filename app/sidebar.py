@@ -10,8 +10,9 @@ from typing import List, Optional
 
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QListWidget,
-                               QListWidgetItem, QPushButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel,
+                               QListWidget, QListWidgetItem, QPushButton,
+                               QVBoxLayout, QWidget)
 
 from . import theme
 from .engine.coords import to_gtp
@@ -135,6 +136,13 @@ class Sidebar(QWidget):
             actions.addWidget(b)
         lay.addLayout(actions)
 
+        files = QHBoxLayout()
+        save_b, load_b = QPushButton("SGF 저장"), QPushButton("SGF 불러오기")
+        save_b.clicked.connect(self._on_save)
+        load_b.clicked.connect(self._on_load)
+        files.addWidget(save_b), files.addWidget(load_b)
+        lay.addLayout(files)
+
         # Candidate moves.
         lay.addWidget(QLabel("후보수 (승률 · 집 · 방문)"))
         self.candidates = QListWidget()
@@ -170,6 +178,19 @@ class Sidebar(QWidget):
         key = self.net_combo.currentData()
         if self.engine.set_analysis_network(key):
             self.controller.refresh_analysis()
+
+    def _on_save(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "SGF 저장", "game.sgf", "SGF (*.sgf)")
+        if path:
+            if not path.endswith(".sgf"):
+                path += ".sgf"
+            self.controller.save_sgf(path)
+            self.set_status(f"저장됨: {path}")
+
+    def _on_load(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "SGF 불러오기", "", "SGF (*.sgf)")
+        if path and self.controller.load_sgf(path):
+            self.set_status(f"불러옴: {path}")
 
     def _on_candidate(self, item: QListWidgetItem) -> None:
         point = item.data(Qt.UserRole)
