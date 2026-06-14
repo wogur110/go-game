@@ -158,6 +158,10 @@ class GameController(QObject):
     def set_rank(self, rank: str) -> None:
         self._rank = rank
 
+    def refresh_analysis(self) -> None:
+        """Re-request analysis for the current view (e.g. after switching network)."""
+        self._request_analysis()
+
     # -- engine flow ----------------------------------------------------------
 
     def _refresh(self) -> None:

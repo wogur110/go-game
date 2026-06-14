@@ -39,8 +39,10 @@ class EngineManager(QObject):
         self.rules = rules
         self.analysis_visits = analysis_visits
         self._katago = find_katago()
-        self._b28 = find_model(NETWORKS["b28"].filename)
+        self._analysis_model = find_model(NETWORKS["b28"].filename)
+        self._play_model = self._analysis_model        # human-net play searches with b28
         self._human = find_model(NETWORKS["human"].filename)
+        self._analysis_network = "b28"
         self._analysis_cfg = find_config("analysis.cfg")
         self._gtp_cfg = find_config("gtp_human.cfg")
         self._analysis: Optional[AnalysisClient] = None
@@ -51,15 +53,17 @@ class EngineManager(QObject):
 
     @property
     def available(self) -> bool:
-        return all([self._katago, self._b28, self._human, self._analysis_cfg, self._gtp_cfg])
+        return all([self._katago, self._analysis_model, self._human,
+                    self._analysis_cfg, self._gtp_cfg])
 
     @property
     def ready(self) -> bool:
         return self._ready
 
     def missing(self) -> List[str]:
-        items = {"katago": self._katago, "b28": self._b28, "human-net": self._human,
-                 "analysis.cfg": self._analysis_cfg, "gtp_human.cfg": self._gtp_cfg}
+        items = {"katago": self._katago, "b28": self._analysis_model,
+                 "human-net": self._human, "analysis.cfg": self._analysis_cfg,
+                 "gtp_human.cfg": self._gtp_cfg}
         return [k for k, v in items.items() if not v]
 
     # -- lifecycle ------------------------------------------------------------
@@ -75,11 +79,11 @@ class EngineManager(QObject):
     def _start_engines(self) -> None:
         try:
             self._analysis = AnalysisClient(
-                self._katago, self._analysis_cfg, self._b28,
+                self._katago, self._analysis_cfg, self._analysis_model,
                 self._on_analysis_result, self.engineError.emit)
             self._analysis.start()
             self._play = GtpClient(
-                self._katago, self._gtp_cfg, self._b28, self._human,
+                self._katago, self._gtp_cfg, self._play_model, self._human,
                 board_size=self.board_size, komi=self.komi, rules=self.rules)
             self._play.start()
             self._play_thread = threading.Thread(
@@ -105,6 +109,33 @@ class EngineManager(QObject):
         except (TypeError, ValueError):
             return
         self.analysisReady.emit(gen, result)
+
+    @property
+    def analysis_network(self) -> str:
+        return self._analysis_network
+
+    def set_analysis_network(self, key: str) -> bool:
+        """Switch the analysis network (e.g. b28 <-> b18); restarts that engine."""
+        net = NETWORKS.get(key)
+        if not net or net.role != "analysis":
+            return False
+        if key == self._analysis_network and self._analysis is not None:
+            return True
+        model = find_model(net.filename)
+        if not model:
+            self.engineError.emit(
+                f"{net.label} 가중치가 없습니다 — `python download_katago.py --network {key}`")
+            return False
+        self._analysis_model = model
+        self._analysis_network = key
+        if self._ready:
+            if self._analysis:
+                self._analysis.stop()
+            self._analysis = AnalysisClient(
+                self._katago, self._analysis_cfg, model,
+                self._on_analysis_result, self.engineError.emit)
+            self._analysis.start()
+        return True
 
     # -- play (human net) -----------------------------------------------------
 

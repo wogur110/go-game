@@ -37,6 +37,10 @@ class BoardWidget(QWidget):
         self._to_move = BLACK
         self._show_coords = True
         self._movable = True
+        self._analysis = None            # AnalysisResult for the shown position, or None
+        self._show_analysis = True
+        self._show_ownership = True
+        self._candidate_limit = 6
         self.setMinimumSize(360, 360)
         self.setMouseTracking(True)
 
@@ -48,6 +52,12 @@ class BoardWidget(QWidget):
         self._size = size
         self._last_move = last_move
         self._to_move = to_move
+        self._analysis = None            # overlays are stale until new analysis arrives
+        self.update()
+
+    def set_analysis(self, result) -> None:
+        """Attach an AnalysisResult (candidate moves + ownership) for the shown position."""
+        self._analysis = result
         self.update()
 
     def set_movable(self, movable: bool) -> None:
@@ -55,6 +65,14 @@ class BoardWidget(QWidget):
 
     def set_show_coords(self, show: bool) -> None:
         self._show_coords = show
+        self.update()
+
+    def set_show_analysis(self, show: bool) -> None:
+        self._show_analysis = show
+        self.update()
+
+    def set_show_ownership(self, show: bool) -> None:
+        self._show_ownership = show
         self.update()
 
     # -- geometry -------------------------------------------------------------
@@ -120,6 +138,10 @@ class BoardWidget(QWidget):
         if self._show_coords:
             self._draw_coords(p, ox, oy, cell, n)
 
+        # Ownership heatmap (under the stones).
+        if self._analysis is not None and self._show_ownership:
+            self._draw_ownership(p, n, cell)
+
         # Stones.
         r = cell * 0.46
         for y in range(n):
@@ -138,7 +160,64 @@ class BoardWidget(QWidget):
             mr = r * 0.34
             p.drawEllipse(self._center(lx, ly), mr, mr)
 
+        # Candidate-move overlay (on top).
+        if self._analysis is not None and self._show_analysis:
+            self._draw_candidates(p, r, n)
+
         p.end()
+
+    def _draw_ownership(self, p: QPainter, n: int, cell: float) -> None:
+        own = getattr(self._analysis, "ownership", None)
+        if not own or len(own) != n * n:
+            return
+        half = cell * 0.46
+        side = half * 2
+        p.setPen(Qt.NoPen)
+        for y in range(n):
+            row = y * n
+            for x in range(n):
+                v = own[row + x]            # +ve = Black-owned (verified)
+                a = abs(v)
+                if a < 0.12:
+                    continue
+                alpha = int(min(0.55, a * 0.55) * 255)
+                col = QColor(8, 10, 14, alpha) if v > 0 else QColor(238, 240, 245, alpha)
+                p.setBrush(col)
+                c = self._center(x, y)
+                p.drawRect(QRectF(c.x() - half, c.y() - half, side, side))
+
+    def _draw_candidates(self, p: QPainter, r: float, n: int) -> None:
+        moves = self._analysis.moves[:self._candidate_limit]
+        if not moves:
+            return
+        black_to_move = self._to_move == BLACK
+        wr_font = QFont()
+        wr_font.setPixelSize(int(max(8, r * 0.6)))
+        wr_font.setBold(True)
+        sc_font = QFont()
+        sc_font.setPixelSize(int(max(7, r * 0.44)))
+        for rank, mi in enumerate(moves):
+            if mi.point is None:
+                continue
+            x, y = mi.point
+            if not (0 <= x < n and 0 <= y < n):
+                continue
+            c = self._center(x, y)
+            wr = mi.winrate if black_to_move else 1.0 - mi.winrate
+            sc = mi.score_lead if black_to_move else -mi.score_lead
+            base = (QColor(theme.CANDIDATE[rank]) if rank < len(theme.CANDIDATE)
+                    else QColor("#7c8696"))
+            base.setAlpha(235 if rank == 0 else 150)
+            p.setBrush(base)
+            p.setPen(QPen(QColor(theme.BG_MAIN), max(1.0, r * 0.06)))
+            p.drawEllipse(c, r * 0.92, r * 0.92)
+            p.setPen(QPen(QColor("#0b0d11")))
+            p.setFont(wr_font)
+            p.drawText(QRectF(c.x() - r, c.y() - r * 0.92, 2 * r, r * 1.05),
+                       Qt.AlignCenter, f"{wr * 100:.0f}")
+            p.setFont(sc_font)
+            p.drawText(QRectF(c.x() - r, c.y() + r * 0.05, 2 * r, r * 0.85),
+                       Qt.AlignCenter, f"{sc:+.1f}")
 
     def _draw_coords(self, p: QPainter, ox: float, oy: float, cell: float, n: int) -> None:
         font = QFont()
