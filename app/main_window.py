@@ -43,6 +43,7 @@ class MainWindow(QWidget):
         root.addWidget(self.sidebar)
 
         self.board.moveRequested.connect(self.controller.make_move)
+        self.board.undoRequested.connect(self.controller.undo)
         self.controller.positionChanged.connect(self._on_position)
         self.controller.statusChanged.connect(self.sidebar.set_status)
         self.controller.analysisUpdated.connect(self._on_analysis)

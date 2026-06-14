@@ -37,6 +37,7 @@ _HOSHI = {
 
 class BoardWidget(QWidget):
     moveRequested = Signal(object)  # (x, y)
+    undoRequested = Signal()        # right-click = take back a move (same as 무르기)
 
     def __init__(self, size: int = 19, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -373,6 +374,9 @@ class BoardWidget(QWidget):
     # -- input ----------------------------------------------------------------
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.RightButton:
+            self.undoRequested.emit()       # right-click anywhere takes back a move
+            return
         if not self._movable or event.button() != Qt.LeftButton:
             return
         pos = event.position()
