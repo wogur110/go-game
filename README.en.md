@@ -11,7 +11,7 @@ but the moves are predicted by KataGo rather than a built-in engine.
 - **Opponent:** KataGo **human-net** (human imitation) — rank-based difficulty from 20k to 9d/pro
 - **Language:** Korean / English — switch from the top of the sidebar (preference is saved)
 - **Engine status:** the sidebar shows model **loading / ready** at startup (colored indicator)
-- **Board aids:** hover **ghost stone** for the next move, hover a candidate to preview its **variation (next 10 moves)**, plus **move-order** and **territory** toggles
+- **Board aids:** hover **ghost stone** for the next move, hover a candidate (in the list **or on the board**) to preview its **variation (next 10 moves)**, plus **move-order** and **territory** toggles
 - **Score estimate:** one button runs a deep (high-visit) analysis and shows **each side's territory** on the board plus **who leads by how many points**
 - **Lizzie-style UI:** a bottom **win-rate graph** (Black win rate over the whole game, click to jump) + **heatmap candidate moves** (blue=best→red, win% + visits) + a board-centric layout
 - **Shortcuts & auto-analyze:** `Space` (toggle analysis) · `←/→` (navigate) · `Home/End` · `A` (**auto-analyze** — step through the whole game) · `P` (pass) · `Ctrl+Z` (undo)

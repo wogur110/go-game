@@ -14,7 +14,7 @@ from PySide6.QtGui import QBrush, QColor, QFont, QMouseEvent, QPainter, QPen, QR
 from PySide6.QtWidgets import QWidget
 
 from . import theme
-from .engine.coords import GTP_COLUMNS
+from .engine.coords import GTP_COLUMNS, from_gtp
 from .goban import BLACK, EMPTY, WHITE, opponent
 
 Point = Tuple[int, int]
@@ -81,6 +81,11 @@ class BoardWidget(QWidget):
     def set_analysis(self, result) -> None:
         """Attach an AnalysisResult (candidate moves + ownership) for the shown position."""
         self._analysis = result
+        if self._hover_point is not None:        # keep an on-board hover PV fresh while streaming
+            pv = self._candidate_pv_at(self._hover_point)
+            if pv is not None:
+                self._pv_preview = pv
+                self._pv_start_color = self._to_move
         self.update()
 
     def set_show_order(self, show: bool) -> None:
@@ -375,15 +380,46 @@ class BoardWidget(QWidget):
         if pt is not None:
             self.moveRequested.emit(pt)
 
+    def _pv_points(self, pv: List[str]) -> List[Point]:
+        pts: List[Point] = []
+        for v in pv[:10]:
+            try:
+                p = from_gtp(v, self._size)
+            except ValueError:
+                p = None
+            if p is None:
+                break        # stop at the first pass so colour/number parity stays aligned
+            pts.append(p)
+        return pts
+
+    def _candidate_pv_at(self, pt: Optional[Point]) -> Optional[List[Point]]:
+        """The principal variation of the candidate whose stone is at ``pt`` (or None)."""
+        if pt is None or self._analysis is None or not self._show_analysis:
+            return None
+        for mi in self._analysis.moves[:self._candidate_limit]:
+            if mi.point == pt:
+                return self._pv_points(mi.pv) or None
+        return None
+
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        pt = self._point_at(event.position().x(), event.position().y()) if self._movable else None
-        if pt != self._hover_point:
+        pt = self._point_at(event.position().x(), event.position().y())
+        repaint = False
+        # Hovering a candidate stone on the board previews its variation (like the list).
+        pv = self._candidate_pv_at(pt)
+        if pv != self._pv_preview:
+            self._pv_preview = pv
+            self._pv_start_color = self._to_move
+            repaint = True
+        if pt != self._hover_point:        # ghost rendering is gated on _movable in paintEvent
             self._hover_point = pt
+            repaint = True
+        if repaint:
             self.update()
 
     def leaveEvent(self, _event) -> None:
-        if self._hover_point is not None:
+        if self._hover_point is not None or self._pv_preview is not None:
             self._hover_point = None
+            self._pv_preview = None
             self.update()
 
     def sizeHint(self) -> QSize:

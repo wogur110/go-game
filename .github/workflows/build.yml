@@ -68,14 +68,16 @@ jobs:
           "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
       - name: Package zip
         shell: pwsh
-        run: Compress-Archive -Path dist\BadukStudio\* -DestinationPath "BadukStudio-windows-x64-${{ steps.ver.outputs.version }}.zip"
+        # Archive the folder (not its contents) so it extracts to "BadukStudio\",
+        # and name the zip without a version.
+        run: Compress-Archive -Path dist\BadukStudio -DestinationPath BadukStudio.zip -Force
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: BadukStudio-windows-x64-${{ steps.ver.outputs.version }}
-          path: BadukStudio-windows-x64-*.zip
+          path: BadukStudio.zip
       - name: Publish release (on tag)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: BadukStudio-windows-x64-*.zip
+          files: BadukStudio.zip
