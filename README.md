@@ -87,7 +87,8 @@ app/
 - **M2 — 분석 UI ✅** : 승률·집수 바, 후보수 오버레이, ownership 히트맵, 분석망 선택(b28/b18), 사이드바(후보 패널·수순표)
 - **M3 — 종국 처리 ✅** : 두 번 패스 후 KataGo `scoreLead` 집계산(사석은 ownership에 반영), SGF 저장/로드/리뷰
 - **M4 — 패키징 ✅** : PyInstaller `baduk_studio.spec`(엔진 제외, 첫 실행 시 다운로드), `build_linux.sh`/`build_windows.bat`, GitHub Actions(우분투 테스트+빌드스모크 → 윈도우 빌드/릴리스)
-- **v2** : 조이(joseki)/포석(fuseki) study 탭, 인앱 엔진 다운로드 다이얼로그
+- **인앱 엔진 다운로드 ✅** : 첫 실행 시 엔진이 없으면 백엔드 선택 + 진행률 다이얼로그로 다운로드
+- **v2** : 조이(joseki)/포석(fuseki) study 탭
 
 ## 빌드 / 배포
 

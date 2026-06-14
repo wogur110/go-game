@@ -59,13 +59,18 @@ def _ua_request(url: str) -> urllib.request.Request:
     return urllib.request.Request(url, headers={"User-Agent": "baduk-studio-setup"})
 
 
-def download_stream(url: str, dest: Path) -> None:
+def download_stream(url: str, dest: Path, on_progress=None) -> None:
+    """Download ``url`` to ``dest``. ``on_progress(message, fraction)`` is called
+    for GUI use (fraction in [0,1], or -1 when unknown)."""
     if dest.is_file() and dest.stat().st_size > 0:
         print(f"  [skip] {dest.name} 이미 존재")
+        if on_progress:
+            on_progress(f"{dest.name} 이미 있음", 1.0)
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.parent / (dest.name + ".part")
     print(f"  [get ] {url}")
+    last_pct = -1
     with urllib.request.urlopen(_ua_request(url)) as resp:
         total = int(resp.headers.get("Content-Length", 0))
         got = 0
@@ -79,9 +84,14 @@ def download_stream(url: str, dest: Path) -> None:
                 if total:
                     pct = got * 100 // total
                     print(f"\r  [....] {pct:3d}%  {got >> 20} / {total >> 20} MB", end="")
+                    if on_progress and pct != last_pct:
+                        last_pct = pct
+                        on_progress(f"{dest.name}  {got >> 20} / {total >> 20} MB", got / total)
         print()
     tmp.replace(dest)
     print(f"  [ok  ] {dest} ({dest.stat().st_size >> 20} MB)")
+    if on_progress:
+        on_progress(f"{dest.name} 완료", 1.0)
 
 
 def fetch_assets() -> list[dict]:
@@ -102,17 +112,21 @@ def resolve_asset(assets: list[dict], os_name: str, backend: str, bs50: bool) ->
     return cands[0] if cands else None
 
 
-def download_binary(os_name: str, backend: str, bs50: bool) -> None:
+def download_binary(os_name: str, backend: str, bs50: bool, on_progress=None) -> None:
     print(f"\nKataGo {KATAGO_RELEASE} 바이너리 ({os_name}, {backend})")
+    if on_progress:
+        on_progress(f"KataGo 바이너리 ({backend}) 정보 조회…", -1)
     assets = fetch_assets()
     asset = resolve_asset(assets, os_name, backend, bs50)
     if not asset:
         print(f"  ✗ 일치하는 에셋 없음. --list 로 확인하세요.")
-        raise SystemExit(2)
+        raise RuntimeError(f"'{backend}' 백엔드용 {os_name} 에셋을 찾지 못했습니다")
     dest_dir = ROOT / "engines" / os_name
     archive_path = dest_dir / asset["name"]
-    download_stream(asset["browser_download_url"], archive_path)
+    download_stream(asset["browser_download_url"], archive_path, on_progress)
 
+    if on_progress:
+        on_progress("엔진 압축 해제 중…", -1)
     print(f"  [unzip] {asset['name']} → engines/{os_name}/")
     payload = archive_path.read_bytes()
     if asset["name"].endswith(".zip"):
@@ -133,13 +147,29 @@ def download_binary(os_name: str, backend: str, bs50: bool) -> None:
     print(f"  [ok  ] {found}")
 
 
-def download_networks(only: str | None = None) -> None:
+def download_networks(only: str | None = None, on_progress=None) -> None:
     print("\nKataGo 네트워크 (가중치)")
     models = ROOT / "models"
     for key, net in NETWORKS.items():
         if only and key != only:
             continue
-        download_stream(network_url(net), models / net.filename)
+        if on_progress:
+            on_progress(f"네트워크 {net.filename}", -1)
+        download_stream(network_url(net), models / net.filename, on_progress)
+
+
+def download_all(backend: str = DEFAULT_BACKEND, os_name: str | None = None,
+                 bs50: bool = False, on_progress=None,
+                 networks: bool = True, binary: bool = True) -> None:
+    """Programmatic entry (used by the in-app download dialog)."""
+    if os_name is None:
+        os_name = "windows" if os.name == "nt" else "linux"
+    if networks:
+        download_networks(None, on_progress=on_progress)
+    if binary:
+        download_binary(os_name, backend, bs50, on_progress=on_progress)
+    if on_progress:
+        on_progress("완료", 1.0)
 
 
 def main() -> int:

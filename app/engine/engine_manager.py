@@ -60,6 +60,15 @@ class EngineManager(QObject):
     def ready(self) -> bool:
         return self._ready
 
+    def rescan(self) -> None:
+        """Re-resolve engine/model/config paths (e.g. after an in-app download)."""
+        self._katago = find_katago()
+        self._analysis_model = find_model(NETWORKS["b28"].filename)
+        self._play_model = self._analysis_model
+        self._human = find_model(NETWORKS["human"].filename)
+        self._analysis_cfg = find_config("analysis.cfg")
+        self._gtp_cfg = find_config("gtp_human.cfg")
+
     def missing(self) -> List[str]:
         items = {"katago": self._katago, "b28": self._analysis_model,
                  "human-net": self._human, "analysis.cfg": self._analysis_cfg,

@@ -40,7 +40,12 @@ def main() -> int:
     engine = EngineManager()
     window = MainWindow(engine)
     window.show()
-    engine.start()  # loads models on a background thread
+
+    if not engine.available:
+        from app.download_dialog import prompt_if_missing
+        prompt_if_missing(window, engine)   # first-run: offer to fetch KataGo
+
+    engine.start()  # if still missing, emits engineError; the app runs human-only
 
     code = app.exec()
     engine.shutdown()
