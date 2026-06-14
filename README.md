@@ -7,6 +7,10 @@ KataGo 신경망을 **실제 GPU**로 구동하는 바둑 데스크톱 프로그
 - **분석:** KataGo **28블록(b28)** 네트워크 — 승률·집수·후보수·영역(ownership)
 - **대국 상대:** KataGo **휴먼넷**(사람 모방) — 20급~9단/프로 급수별 난이도
 
+**▶ [최신 Windows 빌드 다운로드](https://github.com/wogur110/go-game/releases/latest)** — zip을 풀고
+`BadukStudio.exe` 실행. 첫 실행 시 KataGo 엔진(기본 OpenCL)과 신경망을 앱에서 자동으로 받습니다.
+([전체 릴리스 목록](https://github.com/wogur110/go-game/releases))
+
 > 현재 상태: **M0–M4 완료.** 휴먼넷 급수별 대국 + 실시간 분석(승률·집수 바, 후보 오버레이,
 > ownership 히트맵) + 두 번 패스 KataGo 집계산 + SGF 저장/로드 + **PyInstaller 패키징/GitHub Actions
 > Windows 릴리스.** 적대적 다중 에이전트 리뷰로 버그 11건 수정. RTX 5060 Ti(Blackwell)+WSL2 검증.
