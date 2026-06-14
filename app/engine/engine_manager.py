@@ -15,6 +15,7 @@ from typing import List, Optional, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
+from ..i18n import t
 from .analysis_client import AnalysisClient
 from .discovery import find_config, find_katago, find_model
 from .gtp_client import GtpClient
@@ -79,9 +80,7 @@ class EngineManager(QObject):
 
     def start(self) -> None:
         if not self.available:
-            self.engineError.emit(
-                "엔진/네트워크/설정을 찾을 수 없습니다: " + ", ".join(self.missing())
-                + " — 먼저 `python download_katago.py` 를 실행하세요.")
+            self.engineError.emit(t("err.missing", items=", ".join(self.missing())))
             return
         threading.Thread(target=self._start_engines, name="engine-start", daemon=True).start()
 
@@ -106,7 +105,7 @@ class EngineManager(QObject):
                 self._restart_analysis()
             self.enginesReady.emit()
         except Exception as exc:  # noqa: BLE001
-            self.engineError.emit(f"엔진 시작 실패: {exc}")
+            self.engineError.emit(t("err.start_failed", exc=exc))
 
     def _restart_analysis(self) -> None:
         if self._analysis:
@@ -155,8 +154,7 @@ class EngineManager(QObject):
             return True
         model = find_model(net.filename)
         if not model:
-            self.engineError.emit(
-                f"{net.label} 가중치가 없습니다 — `python download_katago.py --network {key}`")
+            self.engineError.emit(t("err.net_missing", label=net.label, key=key))
             return False
         self._analysis_model = model
         self._analysis_network = key
@@ -191,7 +189,7 @@ class EngineManager(QObject):
                 vertex = self._play.genmove(color)
                 self.moveReady.emit(generation, vertex)
             except Exception as exc:  # noqa: BLE001
-                self.engineError.emit(f"대국 엔진 오류: {exc}")
+                self.engineError.emit(t("err.play", exc=exc))
 
     # -- shutdown -------------------------------------------------------------
 

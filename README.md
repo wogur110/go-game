@@ -1,11 +1,14 @@
 # Baduk Studio (바둑 스튜디오)
 
+**한국어** | [English](README.en.md)
+
 KataGo 신경망을 **실제 GPU**로 구동하는 바둑 데스크톱 프로그램. 체스 프로그램
 [wogur110/chess-game](https://github.com/wogur110/chess-game)(PySide6 + Stockfish)와
 비슷한 UI/기능을 목표로 하되, 다음 수는 내장 알고리즘이 아니라 KataGo가 예측합니다.
 
 - **분석:** KataGo **28블록(b28)** 네트워크 — 승률·집수·후보수·영역(ownership)
 - **대국 상대:** KataGo **휴먼넷**(사람 모방) — 20급~9단/프로 급수별 난이도
+- **언어:** 한국어 / English — 사이드바 상단에서 전환(설정 저장)
 
 **▶ [최신 Windows 빌드 다운로드](https://github.com/wogur110/go-game/releases/latest)** — zip을 풀고
 `BadukStudio.exe` 실행. 첫 실행 시 KataGo 엔진(기본 OpenCL)과 신경망을 앱에서 자동으로 받습니다.

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QComboBox, QDialog, QHBoxLayout, QLabel,
 
 import download_katago
 from . import theme
+from .i18n import t
 
 
 def _backend_choices():
@@ -23,15 +24,15 @@ def _backend_choices():
     is the safe default; on Linux CUDA works via the bundled pip wheels."""
     if os.name == "nt":
         return [
-            ("GPU · OpenCL (권장, 드라이버만 필요)", "opencl"),
-            ("NVIDIA · CUDA 12.8 (CUDA+cuDNN 런타임 별도 설치 필요)", "cuda12.8"),
-            ("CPU만 · Eigen (느림)", "eigen"),
+            (t("dl.opencl_win"), "opencl"),
+            (t("dl.cuda_win"), "cuda12.8"),
+            (t("dl.eigen"), "eigen"),
         ]
     return [
-        ("NVIDIA GPU · CUDA 12.8 (권장)", "cuda12.8"),
-        ("NVIDIA GPU · TensorRT", "trt"),
-        ("기타 GPU · OpenCL", "opencl"),
-        ("CPU만 · Eigen (느림)", "eigen"),
+        (t("dl.cuda_lin"), "cuda12.8"),
+        (t("dl.trt"), "trt"),
+        (t("dl.opencl"), "opencl"),
+        (t("dl.eigen"), "eigen"),
     ]
 
 
@@ -56,7 +57,7 @@ class _Worker(QObject):
 class DownloadDialog(QDialog):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("KataGo 엔진 다운로드")
+        self.setWindowTitle(t("dl.title"))
         self.setMinimumWidth(460)
         self.downloaded = False
         self._thread: Optional[QThread] = None
@@ -64,14 +65,12 @@ class DownloadDialog(QDialog):
 
         lay = QVBoxLayout(self)
         lay.setSpacing(10)
-        intro = QLabel(
-            "대국·분석에는 KataGo 엔진과 신경망(b28·휴먼넷)이 필요합니다 (약 400MB).\n"
-            "GPU 백엔드를 고르고 다운로드하세요. 앱 옆에 저장되며 다음 실행부터는 자동 인식됩니다.")
+        intro = QLabel(t("dl.intro"))
         intro.setWordWrap(True)
         lay.addWidget(intro)
 
         row = QHBoxLayout()
-        row.addWidget(QLabel("백엔드"))
+        row.addWidget(QLabel(t("dl.backend")))
         self.combo = QComboBox()
         for label, key in _backend_choices():
             self.combo.addItem(label, key)
@@ -88,9 +87,9 @@ class DownloadDialog(QDialog):
 
         btns = QHBoxLayout()
         btns.addStretch(1)
-        self.later_btn = QPushButton("나중에")
+        self.later_btn = QPushButton(t("dl.later"))
         self.later_btn.clicked.connect(self.reject)
-        self.dl_btn = QPushButton("다운로드")
+        self.dl_btn = QPushButton(t("dl.download"))
         self.dl_btn.clicked.connect(self._start)
         btns.addWidget(self.later_btn)
         btns.addWidget(self.dl_btn)
@@ -127,7 +126,7 @@ class DownloadDialog(QDialog):
         else:
             self.bar.setRange(0, 100)
             self.bar.setValue(0)
-            self.status.setText(f"실패: {message}")
+            self.status.setText(t("dl.failed", msg=message))
             self.dl_btn.setEnabled(True)
             self.combo.setEnabled(True)
             self.later_btn.setEnabled(True)

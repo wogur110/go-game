@@ -16,6 +16,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from .engine.coords import from_gtp, to_gtp
 from .goban import BLACK, COLOR_LETTER, WHITE, Goban, opponent
+from .i18n import t
 from .sgf_io import from_sgf, to_sgf
 
 Point = Tuple[int, int]
@@ -189,7 +190,7 @@ class GameController(QObject):
         info = from_sgf(Path(path).read_bytes())
         if info["size"] != self.size:
             self.statusChanged.emit(
-                f"{info['size']}×{info['size']} 기보는 현재 미지원 (이 앱은 {self.size}로 전용)")
+                t("status.unsupported_size", size=info["size"], n=self.size))
             return False
         self.komi = info["komi"]
         self.rules = info["rules"]
@@ -270,7 +271,7 @@ class GameController(QObject):
         self._thinking = False
         v = vertex.strip().lower()
         if not v:
-            self.statusChanged.emit("대국 엔진이 빈 수를 반환했습니다 — 다시 시도하세요")
+            self.statusChanged.emit(t("status.empty_move"))
             return
         color = self.live_board().to_move
         if v == "resign":
@@ -308,29 +309,36 @@ class GameController(QObject):
 
     def _result_text(self) -> str:
         if self._resigned is not None:
-            winner = "백" if opponent(self._resigned) == WHITE else "흑"
-            return f"{winner} 불계승 (상대 기권)"
+            winner = t("color.white") if opponent(self._resigned) == WHITE else t("color.black")
+            return t("result.resign", winner=winner)
         score = self._final_score()
-        src = "KataGo" if self._score_is_katago() else "집계산"
+        src = t("src.katago") if self._score_is_katago() else t("src.count")
         if score is None:
-            return "집계산 중…"
+            return t("result.counting")
         if score > 0:
-            return f"흑 {score:.1f}집승 ({src})"
+            return t("result.win_by", winner=t("color.black"), score=score, src=src)
         if score < 0:
-            return f"백 {-score:.1f}집승 ({src})"
-        return f"무승부/빅 ({src})"
+            return t("result.win_by", winner=t("color.white"), score=-score, src=src)
+        return t("result.jigo", src=src)
+
+    def refresh_status(self) -> None:
+        """Re-emit the status line (e.g. after a language change)."""
+        self._emit_status()
 
     def _emit_status(self) -> None:
         if not self.is_live:
-            self.statusChanged.emit(f"검토 중 — {self._view} / {len(self._moves)} 수")
+            self.statusChanged.emit(
+                t("status.reviewing", view=self._view, total=len(self._moves)))
             return
         if self.game_over:
-            self.statusChanged.emit("대국 종료 — " + self._result_text())
+            self.statusChanged.emit(t("status.game_over", result=self._result_text()))
             return
         b = self.live_board()
-        turn = "흑" if b.to_move == BLACK else "백"
-        who = "AI" if self._players[b.to_move] == PlayerKind.AI else "사람"
-        extra = " · 생각 중…" if self._thinking else ""
-        wr = f" · 흑 승률 {self._winrate * 100:.1f}%" if self._winrate is not None else ""
-        passes = " · 직전 패스" if b.last_was_pass else ""
-        self.statusChanged.emit(f"{turn} 차례 ({who}){extra}{passes}{wr}")
+        turn = t("color.black") if b.to_move == BLACK else t("color.white")
+        who = t("player.ai") if self._players[b.to_move] == PlayerKind.AI else t("player.human")
+        extra = t("status.thinking") if self._thinking else ""
+        wr = (t("status.winrate", black=t("color.black"), pct=self._winrate * 100)
+              if self._winrate is not None else "")
+        passes = t("status.last_pass") if b.last_was_pass else ""
+        self.statusChanged.emit(
+            t("status.turn", turn=turn, who=who, extra=extra, passes=passes, wr=wr))

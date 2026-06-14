@@ -12,13 +12,14 @@ from PySide6.QtWidgets import QHBoxLayout, QWidget
 
 from .board_widget import BoardWidget
 from .game_controller import GameController, PlayerKind
+from .i18n import I18N, t
 from .sidebar import Sidebar
 
 
 class MainWindow(QWidget):
     def __init__(self, engine, size: int = 19, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self.setWindowTitle("Baduk Studio")
+        self.setWindowTitle(t("app.title"))
         self.resize(1180, 820)
 
         self.engine = engine
@@ -36,9 +37,15 @@ class MainWindow(QWidget):
         self.controller.positionChanged.connect(self._on_position)
         self.controller.statusChanged.connect(self.sidebar.set_status)
         self.controller.analysisUpdated.connect(self._on_analysis)
+        I18N.languageChanged.connect(self._retranslate)
 
         self._on_position()
         self.controller._emit_status()
+
+    def _retranslate(self) -> None:
+        self.setWindowTitle(t("app.title"))
+        self.sidebar.retranslate()
+        self.controller.refresh_status()
 
     def _on_position(self) -> None:
         b = self.controller.view_board()
