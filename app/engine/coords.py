@@ -32,8 +32,10 @@ def to_gtp(point: Optional[Point], size: int) -> str:
 def from_gtp(vertex: str, size: int) -> Optional[Point]:
     """GTP vertex → internal ``(x, y)`` point. ``"pass"``/``"resign"`` → ``None``."""
     v = vertex.strip()
-    if v.lower() in (PASS, RESIGN, ""):
+    if v.lower() in (PASS, RESIGN):
         return None
+    if not v:
+        raise ValueError("empty GTP vertex")   # don't silently coerce "" to a pass
     x = GTP_COLUMNS.index(v[0].upper())
     row = int(v[1:])
     return (x, size - row)

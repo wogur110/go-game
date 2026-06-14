@@ -121,6 +121,9 @@ class Sidebar(QWidget):
         for key, net in ANALYSIS_NETS:
             self.net_combo.addItem(key, key)
         self.net_combo.currentIndexChanged.connect(self._on_network)
+        # Switching nets only takes effect once engines are loaded — gate until ready.
+        self.net_combo.setEnabled(False)
+        self.engine.enginesReady.connect(lambda: self.net_combo.setEnabled(True))
         sel.addWidget(QLabel("급수")), sel.addWidget(self.rank_combo, 1)
         sel.addWidget(QLabel("분석망")), sel.addWidget(self.net_combo, 1)
         lay.addLayout(sel)

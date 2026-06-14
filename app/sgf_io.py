@@ -78,7 +78,9 @@ def from_sgf(data: bytes) -> dict:
     setup_white = [_from_rc(rc, size) for rc in aw]
 
     moves: List[Move] = []
-    for node in game.get_main_sequence()[1:]:
+    # Iterate the FULL sequence (not [1:]): SGF allows the first move on the root
+    # node (common in pro records). The colour-None guard skips a pure setup root.
+    for node in game.get_main_sequence():
         colour, mv = node.get_move()
         if colour is None:
             continue

@@ -53,6 +53,8 @@ class GameController(QObject):
         self._resigned: Optional[int] = None
         self._winrate: Optional[float] = None
         self._last_analysis = None
+        self._pending_analysis_index = 0   # move-index the in-flight analysis is for
+        self._last_analysis_index = -1     # move-index _last_analysis describes
 
         engine.moveReady.connect(self._on_engine_move)
         engine.analysisReady.connect(self._on_analysis)
@@ -108,6 +110,7 @@ class GameController(QObject):
         self._resigned = None
         self._winrate = None
         self._last_analysis = None
+        self._last_analysis_index = -1
         self._refresh()
 
     def make_move(self, point: Optional[Point]) -> bool:
@@ -153,9 +156,12 @@ class GameController(QObject):
     def navigate(self, index: int) -> None:
         self._view = max(0, min(index, len(self._moves)))
         self._generation += 1
+        self._thinking = False   # bumping generation invalidated any in-flight move
+        self._winrate = None
         self.positionChanged.emit()
         self._emit_status()
         self._request_analysis()
+        self._maybe_ai()         # re-arm the AI if we are back at the live position
 
     def step(self, delta: int) -> None:
         self.navigate(self._view + delta)
@@ -187,12 +193,14 @@ class GameController(QObject):
             return False
         self.komi = info["komi"]
         self.rules = info["rules"]
+        self.engine.set_rules(self.komi, self.rules)
         self._setup_black = info["setup_black"]
         self._setup_white = info["setup_white"]
         self._moves = info["moves"]
         self._resigned = None
         self._winrate = None
         self._last_analysis = None
+        self._last_analysis_index = -1
         self._view = len(self._moves)
         self._refresh()
         return True
@@ -232,6 +240,7 @@ class GameController(QObject):
         # position worth scoring.)
         if self._resigned is not None:
             return
+        self._pending_analysis_index = self._view
         self.engine.request_analysis(self._gtp_moves(self._view), self._generation)
 
     def _maybe_ai(self) -> None:
@@ -256,9 +265,13 @@ class GameController(QObject):
 
     def _on_engine_move(self, gen: int, vertex: str) -> None:
         if gen != self._generation or not self.is_live:
+            self._thinking = False   # stale result dropped — don't leave us "thinking"
             return
         self._thinking = False
         v = vertex.strip().lower()
+        if not v:
+            self.statusChanged.emit("대국 엔진이 빈 수를 반환했습니다 — 다시 시도하세요")
+            return
         color = self.live_board().to_move
         if v == "resign":
             self._resigned = color
@@ -276,23 +289,29 @@ class GameController(QObject):
             return
         self._winrate = result.root_winrate
         self._last_analysis = result
+        self._last_analysis_index = self._pending_analysis_index
         self.analysisUpdated.emit(result)
         self._emit_status()
 
     # -- status ---------------------------------------------------------------
 
     def _final_score(self) -> Optional[float]:
-        """Black-relative final score: KataGo's scoreLead if analysed, else a Tromp-Taylor count."""
-        if self._last_analysis is not None:
+        """Black-relative final score: KataGo's scoreLead for the LIVE terminal position
+        if we have it, else a Tromp-Taylor count (so a reviewed mid-game analysis is
+        never mistaken for the result)."""
+        if self._last_analysis is not None and self._last_analysis_index == len(self._moves):
             return self._last_analysis.root_score_lead
         return self.live_board().area_score()
+
+    def _score_is_katago(self) -> bool:
+        return self._last_analysis is not None and self._last_analysis_index == len(self._moves)
 
     def _result_text(self) -> str:
         if self._resigned is not None:
             winner = "백" if opponent(self._resigned) == WHITE else "흑"
             return f"{winner} 불계승 (상대 기권)"
         score = self._final_score()
-        src = "KataGo" if self._last_analysis is not None else "집계산"
+        src = "KataGo" if self._score_is_katago() else "집계산"
         if score is None:
             return "집계산 중…"
         if score > 0:

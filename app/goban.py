@@ -194,11 +194,11 @@ class Goban:
         return self.consecutive_passes >= 2
 
     def setup_stones(self, points: List[Point], color: int) -> None:
-        """Place stones without capture logic (handicap / SGF setup); sets White to move."""
+        """Place stones without capture logic (Black setup → White to move, and vice versa)."""
         for p in points:
             self.board[self._idx(p)] = color
         if points:
-            self.to_move = WHITE
+            self.to_move = WHITE if color == BLACK else BLACK
         self._history = {self._board_hash(self.board)}
 
     def place_setup(self, black: List[Point], white: List[Point]) -> None:

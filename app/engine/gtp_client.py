@@ -48,6 +48,7 @@ class GtpClient:
         self._rules = rules
         self._profile = profile
         self._proc: Optional[subprocess.Popen] = None
+        self._stderr_reader: Optional[threading.Thread] = None
         self._lock = threading.Lock()
 
     # -- lifecycle --
@@ -68,6 +69,11 @@ class GtpClient:
             bufsize=1,
             **_popen_kwargs(),
         )
+        # Drain stderr so KataGo's model-load / GPU-tuning output can't fill the
+        # pipe and deadlock the engine (mirrors AnalysisClient).
+        self._stderr_reader = threading.Thread(
+            target=self._read_stderr, name="kata-gtp-err", daemon=True)
+        self._stderr_reader.start()
         self._send(f"boardsize {self._board_size}")
         self._send(f"komi {self._komi}")
         try:
@@ -75,6 +81,13 @@ class GtpClient:
         except RuntimeError:
             pass  # older binaries: rules already set via config
         self._send("clear_board")
+
+    def _read_stderr(self) -> None:
+        proc = self._proc
+        if not proc or not proc.stderr:
+            return
+        for _line in proc.stderr:   # discard; keeps the pipe from backing up
+            pass
 
     @property
     def alive(self) -> bool:
@@ -95,13 +108,19 @@ class GtpClient:
             proc = self._proc
             if not proc or not proc.stdin or not proc.stdout:
                 raise RuntimeError("KataGo(gtp) 프로세스가 없습니다")
-            proc.stdin.write(command + "\n")
-            proc.stdin.flush()
+            try:
+                proc.stdin.write(command + "\n")
+                proc.stdin.flush()
+            except (BrokenPipeError, OSError) as exc:
+                raise RuntimeError(f"KataGo(gtp) 쓰기 실패: {exc}") from exc
             # A GTP response is a status line ('=' ok / '?' error) then lines
             # until a blank line.
             status = proc.stdout.readline()
             while status and not (status.startswith("=") or status.startswith("?")):
                 status = proc.stdout.readline()
+            if status == "":   # EOF: engine closed stdout (crashed / killed / OOM)
+                raise RuntimeError(
+                    f"KataGo(gtp) 프로세스가 응답 없이 종료됨 (exit={proc.poll()})")
             body = [status.rstrip("\n")]
             while True:
                 ln = proc.stdout.readline()
@@ -125,10 +144,20 @@ class GtpClient:
         ``"pass"`` or ``"resign"``."""
         return self._send(f"genmove {color}").lower()
 
+    def set_komi_rules(self, komi: float, rules: str) -> None:
+        self._komi = komi
+        self._rules = rules
+        self._send(f"komi {komi}")
+        try:
+            self._send(f"kata-set-rules {rules}")
+        except RuntimeError:
+            pass
+
     # -- shutdown --
 
     def stop(self) -> None:
-        proc, self._proc = self._proc, None
+        with self._lock:                  # don't tear down mid-_send
+            proc, self._proc = self._proc, None
         if not proc:
             return
         try:

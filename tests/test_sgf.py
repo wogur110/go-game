@@ -59,6 +59,15 @@ def test_size_preserved_13():
     assert info["moves"] == moves
 
 
+def test_first_move_on_root_node():
+    # Many pro/editor SGFs put the first move on the root node alongside SZ/KM.
+    data = b"(;GM[1]FF[4]SZ[19]KM[6.5]B[pd];W[dp];B[pp];W[dd])"
+    info = from_sgf(data)
+    assert info["komi"] == 6.5
+    assert len(info["moves"]) == 4, info["moves"]
+    assert info["moves"][0] == (BLACK, (15, 3)), info["moves"][0]  # SGF pd -> (x15,y3)
+
+
 def _run():
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failed = 0

@@ -123,23 +123,30 @@ class AnalysisClient:
     def _read_stdout(self) -> None:
         proc = self._proc
         assert proc and proc.stdout
-        for line in proc.stdout:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if "error" in obj:
-                self._on_error(f"KataGo(analysis): {obj['error']}")
-                continue
-            if obj.get("isDuringSearch"):
-                continue  # M0: act only on the final result, not streaming partials
-            result = self._parse(obj)
-            if result is not None:
-                self._on_result(obj.get("id", ""), result)
-        self._alive = False
+        try:
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if "error" in obj:
+                    self._on_error(f"KataGo(analysis): {obj['error']}")
+                    continue
+                if obj.get("isDuringSearch"):
+                    continue  # act only on the final result, not streaming partials
+                try:
+                    result = self._parse(obj)
+                except Exception as exc:  # noqa: BLE001
+                    # one malformed result must not kill analysis for the session
+                    self._on_error(f"KataGo(analysis) 결과 파싱 실패: {exc}")
+                    continue
+                if result is not None:
+                    self._on_result(obj.get("id", ""), result)
+        finally:
+            self._alive = False
 
     def _read_stderr(self) -> None:
         proc = self._proc

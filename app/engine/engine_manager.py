@@ -78,8 +78,9 @@ class EngineManager(QObject):
 
     def _start_engines(self) -> None:
         try:
+            started_model = self._analysis_model
             self._analysis = AnalysisClient(
-                self._katago, self._analysis_cfg, self._analysis_model,
+                self._katago, self._analysis_cfg, started_model,
                 self._on_analysis_result, self.engineError.emit)
             self._analysis.start()
             self._play = GtpClient(
@@ -90,9 +91,31 @@ class EngineManager(QObject):
                 target=self._play_loop, name="engine-play", daemon=True)
             self._play_thread.start()
             self._ready = True
+            # A network switch during the (slow) load updated _analysis_model after
+            # we captured started_model — honour it now that we're ready.
+            if self._analysis_model != started_model:
+                self._restart_analysis()
             self.enginesReady.emit()
         except Exception as exc:  # noqa: BLE001
             self.engineError.emit(f"엔진 시작 실패: {exc}")
+
+    def _restart_analysis(self) -> None:
+        if self._analysis:
+            self._analysis.stop()
+        self._analysis = AnalysisClient(
+            self._katago, self._analysis_cfg, self._analysis_model,
+            self._on_analysis_result, self.engineError.emit)
+        self._analysis.start()
+
+    def set_rules(self, komi: float, rules: str) -> None:
+        """Update komi/rules (e.g. after loading an SGF) for analysis and play."""
+        self.komi = komi
+        self.rules = rules
+        if self._play is not None:
+            try:
+                self._play.set_komi_rules(komi, rules)
+            except Exception:  # noqa: BLE001
+                pass
 
     # -- analysis -------------------------------------------------------------
 
@@ -129,12 +152,7 @@ class EngineManager(QObject):
         self._analysis_model = model
         self._analysis_network = key
         if self._ready:
-            if self._analysis:
-                self._analysis.stop()
-            self._analysis = AnalysisClient(
-                self._katago, self._analysis_cfg, model,
-                self._on_analysis_result, self.engineError.emit)
-            self._analysis.start()
+            self._restart_analysis()      # not ready yet → applied in _start_engines
         return True
 
     # -- play (human net) -----------------------------------------------------

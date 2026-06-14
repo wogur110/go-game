@@ -150,6 +150,22 @@ def test_superko_blocks_repeat():
     assert len(g._history) == n0 + 2
 
 
+def test_setup_stones_to_move():
+    g = Goban(size=9)
+    g.setup_stones([(2, 2), (6, 6)], BLACK)   # handicap → White moves
+    assert g.to_move == WHITE
+    h = Goban(size=9)
+    h.setup_stones([(2, 2)], WHITE)           # white setup → Black moves
+    assert h.to_move == BLACK
+
+
+def test_place_setup_handicap():
+    g = Goban(size=19)
+    g.place_setup([(3, 3), (15, 15)], [])      # handicap stones, White to move
+    assert g.get((3, 3)) == BLACK
+    assert g.to_move == WHITE
+
+
 def _run():
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failed = 0
