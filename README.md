@@ -7,9 +7,9 @@ KataGo 신경망을 **실제 GPU**로 구동하는 바둑 데스크톱 프로그
 - **분석:** KataGo **28블록(b28)** 네트워크 — 승률·집수·후보수·영역(ownership)
 - **대국 상대:** KataGo **휴먼넷**(사람 모방) — 20급~9단/프로 급수별 난이도
 
-> 현재 상태: **M3 — 종국 처리(KataGo 집계산) + SGF 저장/로드 동작 (GPU 검증됨).**
-> 사람 vs 휴먼넷 대국 + 실시간 분석(승률·집수 바, 후보 오버레이, ownership 히트맵) + 두 번 패스 종국 집계산 + SGF.
-> RTX 5060 Ti(Blackwell) + WSL2에서 검증 — `python main.py` 로 실행.
+> 현재 상태: **M0–M4 완료.** 휴먼넷 급수별 대국 + 실시간 분석(승률·집수 바, 후보 오버레이,
+> ownership 히트맵) + 두 번 패스 KataGo 집계산 + SGF 저장/로드 + **PyInstaller 패키징/GitHub Actions
+> Windows 릴리스.** 적대적 다중 에이전트 리뷰로 버그 11건 수정. RTX 5060 Ti(Blackwell)+WSL2 검증.
 
 ## 개발 결정 (확정)
 
@@ -86,5 +86,22 @@ app/
   `GameController`(세대 카운터·Human/AI·undo·리뷰), Qt `EngineManager`, 사람↔휴먼넷 실제 대국
 - **M2 — 분석 UI ✅** : 승률·집수 바, 후보수 오버레이, ownership 히트맵, 분석망 선택(b28/b18), 사이드바(후보 패널·수순표)
 - **M3 — 종국 처리 ✅** : 두 번 패스 후 KataGo `scoreLead` 집계산(사석은 ownership에 반영), SGF 저장/로드/리뷰
-- **M4 — 마감 + 패키징** : 다크 테마 정리, PyInstaller `go_studio.spec`, `build_windows.bat`, GitHub Actions Windows 릴리스
-- **v2** : 조이(joseki)/포석(fuseki) study 탭
+- **M4 — 패키징 ✅** : PyInstaller `baduk_studio.spec`(엔진 제외, 첫 실행 시 다운로드), `build_linux.sh`/`build_windows.bat`, GitHub Actions(우분투 테스트+빌드스모크 → 윈도우 빌드/릴리스)
+- **v2** : 조이(joseki)/포석(fuseki) study 탭, 인앱 엔진 다운로드 다이얼로그
+
+## 빌드 / 배포
+
+```bash
+./build_linux.sh            # dist/BadukStudio/BadukStudio (개발용)
+# Windows: build_windows.bat → dist\BadukStudio\BadukStudio.exe
+```
+
+엔진(KataGo 바이너리 + 네트워크)은 용량/GPU 의존성 때문에 번들에 넣지 않고 **앱에서 받습니다**:
+
+```bash
+BadukStudio --download                 # 기본 NVIDIA CUDA 12.8 (또는 --backend opencl|eigen)
+```
+
+[.github/workflows/build.yml](.github/workflows/build.yml): main/PR/태그 push 시 우분투에서 규칙·SGF
+테스트 + 엔진 없는 `--build-smoke`를 돌리고, windows-latest에서 exe를 빌드·스모크·zip 패키징하며,
+`v*` 태그면 GitHub Release에 첨부합니다. (PyInstaller는 크로스컴파일 불가 → Windows exe는 Windows에서 빌드)

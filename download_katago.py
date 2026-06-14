@@ -49,7 +49,10 @@ BACKENDS = {
 }
 DEFAULT_BACKEND = "cuda12.8"
 
-ROOT = Path(__file__).resolve().parent
+# Write next to the executable when frozen (PyInstaller), so a packaged build
+# downloads engines/ and models/ beside the app rather than into a temp dir.
+ROOT = (Path(sys.executable).resolve().parent if getattr(sys, "frozen", False)
+        else Path(__file__).resolve().parent)
 
 
 def _ua_request(url: str) -> urllib.request.Request:

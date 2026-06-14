@@ -1,7 +1,9 @@
 """Baduk Studio — entry point.
 
-    python main.py            # launch the GUI
-    python main.py --smoke    # headless human→AI round-trip self-check (CI / no display)
+    python main.py                # launch the GUI
+    python main.py --download     # fetch the KataGo engine + networks (forwards args)
+    python main.py --smoke        # headless human→AI round-trip (needs the engine/GPU)
+    python main.py --build-smoke  # UI + rules + SGF self-check, NO engine (CI / packaging)
 """
 
 from __future__ import annotations
@@ -10,6 +12,15 @@ import sys
 
 
 def main() -> int:
+    if "--download" in sys.argv:
+        sys.argv.remove("--download")
+        from download_katago import main as download_main
+        return download_main()
+
+    if "--build-smoke" in sys.argv:
+        from app.build_smoke import run_build_smoke
+        return run_build_smoke()
+
     if "--smoke" in sys.argv:
         from app.game_smoke import run_smoke
         return run_smoke()
