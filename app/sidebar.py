@@ -121,6 +121,7 @@ class Sidebar(QWidget):
         self.engine_status.setObjectName("EngineStatus")
         lay.addWidget(self.engine_status)
         self.engine.engineState.connect(self._on_engine_state)
+        self.engine.engineError.connect(self._on_engine_error)
         self._render_engine_state()
 
         self.status = QLabel(t("status.loading"))
@@ -197,6 +198,15 @@ class Sidebar(QWidget):
             opts.addWidget(cb)
         lay.addLayout(opts)
 
+        # Precise score estimate (deep one-shot analysis).
+        self.estimate_btn = QPushButton(t("btn.estimate"))
+        self.estimate_btn.clicked.connect(self._on_estimate_click)
+        lay.addWidget(self.estimate_btn)
+        self.estimate_label = QLabel("")
+        self.estimate_label.setObjectName("Estimate")
+        self.estimate_label.setWordWrap(True)
+        lay.addWidget(self.estimate_label)
+
         # Candidate moves (hover a row to preview its variation on the board).
         self.cand_label = QLabel(t("ui.candidates"))
         lay.addWidget(self.cand_label)
@@ -248,6 +258,28 @@ class Sidebar(QWidget):
         key = self.net_combo.currentData()
         if self.engine.set_analysis_network(key):
             self.controller.refresh_analysis()
+
+    def _on_estimate_click(self) -> None:
+        if self.controller.request_estimate():
+            self.estimate_label.setText(t("estimate.computing"))
+        else:
+            self.estimate_label.setText(t("estimate.not_ready"))
+
+    def _on_engine_error(self, _msg: str) -> None:
+        if self.estimate_label.text() == t("estimate.computing"):
+            self.estimate_label.setText("")   # don't leave the estimate hanging on an error
+
+    def show_estimate(self, result, to_move: int) -> None:
+        own = result.ownership or []
+        ba = sum(1 for o in own if o > 0.4)
+        wa = sum(1 for o in own if o < -0.4)
+        margin = result.root_score_lead
+        leader = t("color.black") if margin >= 0 else t("color.white")
+        self.estimate_label.setText(
+            t("estimate.summary", ba=ba, wa=wa, leader=leader, margin=abs(margin)))
+
+    def clear_estimate(self) -> None:
+        self.estimate_label.setText("")
 
     def _on_save(self) -> None:
         path, _ = QFileDialog.getSaveFileName(self, t("dlg.save_sgf"), "game.sgf", "SGF (*.sgf)")
@@ -303,6 +335,7 @@ class Sidebar(QWidget):
         self.cand_check.setText(t("ui.show_candidates"))
         self.terr_check.setText(t("ui.show_territory"))
         self.order_check.setText(t("ui.show_order"))
+        self.estimate_btn.setText(t("btn.estimate"))
         self.winbar.update()
 
     def set_status(self, text: str) -> None:

@@ -35,6 +35,7 @@ class GameController(QObject):
     positionChanged = Signal()         # board content / view changed
     statusChanged = Signal(str)
     analysisUpdated = Signal(object)   # AnalysisResult for the current view
+    estimateReady = Signal(object)     # high-visit AnalysisResult for a score estimate
 
     def __init__(self, engine, size: int = 19, komi: float = 7.5,
                  rules: str = "chinese", parent: Optional[QObject] = None):
@@ -56,9 +57,11 @@ class GameController(QObject):
         self._last_analysis = None
         self._pending_analysis_index = 0   # move-index the in-flight analysis is for
         self._last_analysis_index = -1     # move-index _last_analysis describes
+        self._estimate_gen = -1            # generation a score estimate was requested at
 
         engine.moveReady.connect(self._on_engine_move)
         engine.analysisReady.connect(self._on_analysis)
+        engine.estimateReady.connect(self._on_estimate)
         engine.enginesReady.connect(self._on_engines_ready)
         engine.engineError.connect(self.statusChanged.emit)
 
@@ -177,6 +180,18 @@ class GameController(QObject):
     def refresh_analysis(self) -> None:
         """Re-request analysis for the current view (e.g. after switching network)."""
         self._request_analysis()
+
+    def request_estimate(self) -> bool:
+        """Ask for a precise (high-visit) score estimate of the current view."""
+        if not self.engine.ready:
+            return False
+        self._estimate_gen = self._generation
+        return self.engine.request_estimate(self._gtp_moves(self._view))
+
+    def _on_estimate(self, result) -> None:
+        if self._generation != self._estimate_gen:
+            return   # position changed since the estimate was requested — drop it
+        self.estimateReady.emit(result)
 
     # -- SGF ------------------------------------------------------------------
 

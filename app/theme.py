@@ -45,6 +45,7 @@ def build_stylesheet() -> str:
     QWidget {{ background: {BG_MAIN}; color: {TEXT}; font-size: 13px; }}
     QLabel {{ color: {TEXT_DIM}; }}
     QLabel#Status {{ color: {TEXT}; font-size: 14px; padding: 2px 0; }}
+    QLabel#Estimate {{ color: {GOOD}; font-size: 13px; font-weight: bold; }}
     QPushButton {{ background: {BG_PANEL_LIGHT}; border: 1px solid #2c323d;
                    border-radius: 6px; padding: 7px 10px; color: {TEXT}; }}
     QPushButton:hover {{ background: #2a3140; }}

@@ -39,6 +39,7 @@ class MainWindow(QWidget):
         self.controller.analysisUpdated.connect(self._on_analysis)
         self.sidebar.viewToggled.connect(self._on_view_toggled)
         self.sidebar.pvPreview.connect(self._on_pv_preview)
+        self.controller.estimateReady.connect(self._on_estimate)
         I18N.languageChanged.connect(self._retranslate)
 
         self._on_position()
@@ -64,10 +65,15 @@ class MainWindow(QWidget):
         else:
             self.board.set_pv_preview(None)
 
+    def _on_estimate(self, result) -> None:
+        self.board.set_territory(result.ownership)
+        self.sidebar.show_estimate(result, self.controller.view_board().to_move)
+
     def _on_position(self) -> None:
         b = self.controller.view_board()
         self.board.set_position(b.board, b.size, b.last_move, b.to_move, b.move_no)
         self.sidebar.clear_analysis()
+        self.sidebar.clear_estimate()
         self.sidebar.refresh_moves()
         human_turn = (self.controller.is_live and not self.controller.game_over
                       and self.controller.player(b.to_move) == PlayerKind.HUMAN)

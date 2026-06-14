@@ -93,10 +93,11 @@ class AnalysisClient:
         rules: str,
         max_visits: int,
         include_ownership: bool = True,
-    ) -> None:
-        """Queue an analysis of the position reached by ``moves`` (``[(color, vertex)]``)."""
+    ) -> bool:
+        """Queue an analysis of the position reached by ``moves``. Returns False if the
+        query could not be sent (engine not alive / write failed)."""
         if not self.alive:
-            return
+            return False
         query = {
             "id": analysis_id,
             "moves": [[c, v] for c, v in moves],
@@ -116,7 +117,10 @@ class AnalysisClient:
                 self._proc.stdin.write(line)
                 self._proc.stdin.flush()
             except Exception as exc:  # noqa: BLE001
+                self._sizes.pop(analysis_id, None)
                 self._on_error(f"KataGo(analysis) 쓰기 실패: {exc}")
+                return False
+        return True
 
     # -- reader threads --
 
@@ -133,6 +137,7 @@ class AnalysisClient:
                 except json.JSONDecodeError:
                     continue
                 if "error" in obj:
+                    self._sizes.pop(obj.get("id", ""), None)   # don't leak the size entry
                     self._on_error(f"KataGo(analysis): {obj['error']}")
                     continue
                 if obj.get("isDuringSearch"):

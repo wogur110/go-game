@@ -32,6 +32,7 @@ class EngineManager(QObject):
     engineError = Signal(str)
     enginesReady = Signal()
     engineState = Signal(str)             # "missing" | "loading" | "ready" | "error"
+    estimateReady = Signal(object)        # high-visit AnalysisResult for a score estimate
 
     def __init__(self, board_size: int = 19, komi: float = 7.5, rules: str = "chinese",
                  analysis_visits: int = 600, parent: Optional[QObject] = None):
@@ -139,7 +140,19 @@ class EngineManager(QObject):
             str(generation), moves, board_size=self.board_size, komi=self.komi,
             rules=self.rules, max_visits=self.analysis_visits, include_ownership=True)
 
+    def request_estimate(self, moves: List[GtpMove], visits: int = 1500) -> bool:
+        """One-shot high-visit analysis (with ownership) for a precise score estimate.
+        Returns False if the query could not be sent."""
+        if not self._ready or not self._analysis:
+            return False
+        return self._analysis.analyze(
+            "est", moves, board_size=self.board_size, komi=self.komi,
+            rules=self.rules, max_visits=visits, include_ownership=True)
+
     def _on_analysis_result(self, id_str: str, result) -> None:
+        if id_str == "est":
+            self.estimateReady.emit(result)
+            return
         try:
             gen = int(id_str)
         except (TypeError, ValueError):

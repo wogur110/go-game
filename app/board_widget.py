@@ -46,6 +46,7 @@ class BoardWidget(QWidget):
         self._hover_point: Optional[Point] = None    # for the ghost stone
         self._pv_preview: Optional[List[Point]] = None   # candidate variation to show
         self._pv_start_color = BLACK
+        self._territory: Optional[List[float]] = None    # precise score-estimate ownership
         self.setMinimumSize(360, 360)
         self.setMouseTracking(True)
 
@@ -60,6 +61,12 @@ class BoardWidget(QWidget):
         self._move_no = move_no
         self._analysis = None            # overlays are stale until new analysis arrives
         self._pv_preview = None
+        self._territory = None
+        self.update()
+
+    def set_territory(self, ownership: Optional[List[float]]) -> None:
+        """Show a precise territory/score estimate (Black-positive ownership), or clear."""
+        self._territory = ownership
         self.update()
 
     def set_analysis(self, result) -> None:
@@ -155,8 +162,8 @@ class BoardWidget(QWidget):
         if self._show_coords:
             self._draw_coords(p, ox, oy, cell, n)
 
-        # Ownership heatmap (under the stones).
-        if self._analysis is not None and self._show_ownership:
+        # Ownership heatmap (under the stones) — hidden while a precise estimate is shown.
+        if self._territory is None and self._analysis is not None and self._show_ownership:
             self._draw_ownership(p, n, cell)
 
         # Stones.
@@ -178,6 +185,10 @@ class BoardWidget(QWidget):
             p.setPen(Qt.NoPen)
             mr = r * 0.34
             p.drawEllipse(self._center(lx, ly), mr, mr)
+
+        # Precise territory / score estimate (solid markers over stones).
+        if self._territory is not None:
+            self._draw_territory(p, n, cell)
 
         # A hovered candidate's variation takes over the overlay; else candidate discs.
         if self._pv_preview:
@@ -212,6 +223,29 @@ class BoardWidget(QWidget):
                 p.setBrush(col)
                 c = self._center(x, y)
                 p.drawRect(QRectF(c.x() - half, c.y() - half, side, side))
+
+    def _draw_territory(self, p: QPainter, n: int, cell: float) -> None:
+        """Precise score estimate: solid territory squares on owned empty points, and a
+        marker on dead stones (a stone whose point the opponent owns)."""
+        own = self._territory
+        if not own or len(own) != n * n:
+            return
+        terr = cell * 0.34
+        dead = cell * 0.30
+        p.setPen(Qt.NoPen)
+        for y in range(n):
+            row = y * n
+            for x in range(n):
+                o = own[row + x]
+                if abs(o) < 0.4:
+                    continue
+                p.setBrush(QColor(16, 18, 24) if o > 0 else QColor(240, 242, 247))
+                c = self._center(x, y)
+                stone = self._board[row + x]
+                if stone == EMPTY:
+                    p.drawRect(QRectF(c.x() - terr / 2, c.y() - terr / 2, terr, terr))
+                elif (stone == BLACK) != (o > 0):   # stone sitting in opponent's area = dead
+                    p.drawRect(QRectF(c.x() - dead / 2, c.y() - dead / 2, dead, dead))
 
     def _draw_candidates(self, p: QPainter, r: float, n: int) -> None:
         moves = self._analysis.moves[:self._candidate_limit]
